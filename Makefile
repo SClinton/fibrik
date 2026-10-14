@@ -13,6 +13,9 @@ HELM_VERSION    ?= v4.3.0
 KIND_VERSION    ?= v0.33.0
 KUBECTL_VERSION ?= v1.37.1
 COSIGN_VERSION  ?= v3.1.3
+K3D_VERSION     ?= v5.9.0
+FLUX_VERSION    ?= v2.9.6
+TOFU_VERSION    ?= v1.13.1
 BINFMT_IMAGE    ?= tonistiigi/binfmt:qemu-v10.2.3
 
 # ---- Deployment settings --------------------------------------------------
@@ -51,6 +54,9 @@ HELM    := $(BIN)/helm-$(HELM_VERSION)
 KIND    := $(BIN)/kind-$(KIND_VERSION)
 KUBECTL := $(BIN)/kubectl-$(KUBECTL_VERSION)
 COSIGN  := $(BIN)/cosign-$(COSIGN_VERSION)
+K3D     := $(BIN)/k3d-$(K3D_VERSION)
+FLUX    := $(BIN)/flux-$(FLUX_VERSION)
+TOFU    := $(BIN)/tofu-$(TOFU_VERSION)
 
 # Download $(1) to $(2) and check it against the SHA-256 published at $(3).
 define fetch
@@ -73,6 +79,36 @@ $(KIND):
 $(KUBECTL):
 	$(call fetch,https://dl.k8s.io/release/$(KUBECTL_VERSION)/bin/$(OS)/$(ARCH)/kubectl,$@,https://dl.k8s.io/release/$(KUBECTL_VERSION)/bin/$(OS)/$(ARCH)/kubectl.sha256)
 	@mv $@.tmp $@ && chmod +x $@
+
+# k3d publishes one checksums file for all assets.
+$(K3D):
+	@mkdir -p $(BIN)
+	@echo "downloading k3d $(K3D_VERSION)"
+	@curl -fsSLo $@.tmp https://github.com/k3d-io/k3d/releases/download/$(K3D_VERSION)/k3d-$(OS)-$(ARCH)
+	@expected=$$(curl -fsSL https://github.com/k3d-io/k3d/releases/download/$(K3D_VERSION)/checksums.txt | awk '$$2 ~ /(^|\/)k3d-$(OS)-$(ARCH)$$/ {print $$1}'); \
+	 actual=$$( (sha256sum $@.tmp 2>/dev/null || shasum -a 256 $@.tmp) | awk '{print $$1}'); \
+	 if [ -z "$$expected" ] || [ "$$expected" != "$$actual" ]; then echo "checksum mismatch for k3d"; rm -f $@.tmp; exit 1; fi
+	@mv $@.tmp $@ && chmod +x $@
+
+$(FLUX):
+	@mkdir -p $(BIN)
+	@echo "downloading flux $(FLUX_VERSION)"
+	@v=$(FLUX_VERSION:v%=%); \
+	 curl -fsSLo $@.tgz https://github.com/fluxcd/flux2/releases/download/$(FLUX_VERSION)/flux_$${v}_$(OS)_$(ARCH).tar.gz; \
+	 expected=$$(curl -fsSL https://github.com/fluxcd/flux2/releases/download/$(FLUX_VERSION)/flux_$${v}_checksums.txt | awk '$$2 == "flux_'$${v}'_$(OS)_$(ARCH).tar.gz" {print $$1}'); \
+	 actual=$$( (sha256sum $@.tgz 2>/dev/null || shasum -a 256 $@.tgz) | awk '{print $$1}'); \
+	 if [ -z "$$expected" ] || [ "$$expected" != "$$actual" ]; then echo "checksum mismatch for flux"; rm -f $@.tgz; exit 1; fi
+	@tar -xzf $@.tgz -C $(BIN) flux && mv $(BIN)/flux $@ && rm -f $@.tgz
+
+$(TOFU):
+	@mkdir -p $(BIN)
+	@echo "downloading opentofu $(TOFU_VERSION)"
+	@v=$(TOFU_VERSION:v%=%); \
+	 curl -fsSLo $@.zip https://github.com/opentofu/opentofu/releases/download/$(TOFU_VERSION)/tofu_$${v}_$(OS)_$(ARCH).zip; \
+	 expected=$$(curl -fsSL https://github.com/opentofu/opentofu/releases/download/$(TOFU_VERSION)/tofu_$${v}_SHA256SUMS | awk '$$2 == "tofu_'$${v}'_$(OS)_$(ARCH).zip" {print $$1}'); \
+	 actual=$$( (sha256sum $@.zip 2>/dev/null || shasum -a 256 $@.zip) | awk '{print $$1}'); \
+	 if [ -z "$$expected" ] || [ "$$expected" != "$$actual" ]; then echo "checksum mismatch for tofu"; rm -f $@.zip; exit 1; fi
+	@python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extract('tofu', sys.argv[2])" $@.zip $(BIN) && mv $(BIN)/tofu $@ && chmod +x $@ && rm -f $@.zip
 
 # cosign publishes one checksums file for all assets.
 $(COSIGN):
@@ -124,6 +160,15 @@ py-lint: py-dev ## Lint and format-check the Python code (ruff)
 py-test: py-dev ## Run the Python unit tests
 	$(VENV)/bin/pytest -q
 
+.PHONY: tofu-validate
+tofu-validate: $(TOFU) ## Format-check and validate the OpenTofu modules (no cloud credentials needed)
+	$(TOFU) fmt -check -recursive deploy/tofu
+	@for m in deploy/tofu/*/; do \
+	  echo "--- $$m"; \
+	  $(TOFU) -chdir=$$m init -backend=false -input=false >/dev/null; \
+	  $(TOFU) -chdir=$$m validate; \
+	done
+
 .PHONY: template
 template: $(HELM) ## Render the chart for PROFILE to stdout
 	@$(HELM) template $(RELEASE) $(CHART) -n $(NAMESPACE) -f $(CHART)/values-$(PROFILE).yaml
@@ -142,6 +187,24 @@ kind-up: $(KIND) $(KUBECTL) ## Create the kind cluster (idempotent)
 .PHONY: kind-load
 kind-load: $(KIND) ## Load the locally built images into the kind cluster
 	@for i in $(IMAGES); do $(KIND) load docker-image --name $(KIND_CLUSTER) $(IMAGE_REGISTRY)/$$i:$(IMAGE_TAG); done
+
+.PHONY: k3d-up
+k3d-up: $(K3D) $(KUBECTL) ## Create a k3d cluster (k3s in Docker; Mac mini, Codespaces). UI on localhost:8080
+	@if $(K3D) cluster list $(KIND_CLUSTER) >/dev/null 2>&1; then \
+	  echo "k3d cluster $(KIND_CLUSTER) already exists"; \
+	else \
+	  $(K3D) cluster create $(KIND_CLUSTER) --wait --timeout 180s \
+	    --k3s-arg "--disable=traefik@server:0" -p "8080:80@loadbalancer"; \
+	fi
+	$(KUBECTL) config use-context k3d-$(KIND_CLUSTER)
+
+.PHONY: k3d-load
+k3d-load: $(K3D) ## Load the locally built images into the k3d cluster
+	$(K3D) image import --cluster $(KIND_CLUSTER) $(foreach i,$(IMAGES),$(IMAGE_REGISTRY)/$(i):$(IMAGE_TAG))
+
+.PHONY: k3d-down
+k3d-down: $(K3D) ## Delete the k3d cluster
+	$(K3D) cluster delete $(KIND_CLUSTER)
 
 .PHONY: kind-down
 kind-down: $(KIND) ## Delete the kind cluster
@@ -208,6 +271,16 @@ images-push: $(COSIGN) ## Build multi-arch images, push them to IMAGE_REGISTRY a
 
 .PHONY: ci-lint
 ci-lint: lint ## CI: chart checks
+
+.PHONY: gitops
+gitops: $(FLUX) $(KUBECTL) ## Install Flux and point it at this repo (CLUSTER=local|free)
+	$(FLUX) install
+	$(KUBECTL) apply -k deploy/flux/clusters/$(CLUSTER)
+
+CLUSTER ?= local
+
+.PHONY: ci-k3d
+ci-k3d: images k3d-up k3d-load deploy test e2e ## CI: same as ci-kind, on k3d (k3s)
 
 .PHONY: ci-kind
 ci-kind: images kind-up kind-load deploy test e2e ## CI: build images, deploy PROFILE=ci to kind, run smoke and e2e tests

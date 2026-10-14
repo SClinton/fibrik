@@ -1,0 +1,35 @@
+# The same chart as every other target; clusters/<name> picks the values files.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: fibrik
+  namespace: flux-system
+spec:
+  releaseName: fibrik
+  targetNamespace: fibrik
+  storageNamespace: fibrik
+  interval: 10m0s
+  timeout: 15m0s
+  chart:
+    spec:
+      chart: ./deploy/helm/fibrik
+      # Redeploy on every commit, not only on chart version bumps.
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: fibrik
+        namespace: flux-system
+      valuesFiles:
+        - ./deploy/helm/fibrik/values.yaml
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # Images published by CI from main (make images-push).
+    images:
+      tag: latest
+      pullPolicy: Always

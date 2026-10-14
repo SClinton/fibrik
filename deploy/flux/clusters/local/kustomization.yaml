@@ -1,0 +1,20 @@
+# A single machine: the Mac mini (k3d), a Codespace or any Linux box (k3s).
+# Default values: in-cluster SeaweedFS, plain HTTP on port 80.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - target:
+      kind: HelmRelease
+      name: fibrik
+    patch: |
+      - op: add
+        path: /spec/values/dex
+        value:
+          # Replace with the GitHub connector once the OAuth app exists
+          # (see docs/install.md).
+          connectors:
+            - type: mockCallback
+              id: mock
+              name: Mock login (local)

@@ -24,6 +24,7 @@ jobs:
       - run: make tools
       - run: make ci-lint
       - run: make py-lint py-test
+      - run: make tofu-validate
 
   kind:
     # Portability proof, target 1 of 3 (initial-stack.md §8): same chart on kind (amd64).
@@ -39,10 +40,25 @@ jobs:
       - if: always()
         run: make kind-down
 
+  k3d-arm64:
+    # Portability proof, target 2 of 3: same chart on k3s (via k3d), arm64,
+    # with natively built arm64 images (the OCI A1 and Mac mini architecture).
+    needs: lint
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - run: make tools
+      - run: make ci-k3d PROFILE=ci
+      - if: failure()
+        run: make diag
+      - if: always()
+        run: make k3d-down
+
   publish:
     # Multi-arch images to GHCR, signed keyless with cosign (GitHub OIDC).
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: kind
+    needs: [kind, k3d-arm64]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

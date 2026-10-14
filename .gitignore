@@ -7,3 +7,8 @@ __pycache__/
 *.egg-info/
 # OCB build output
 /cmd/fibrik-otelcol/_build/
+
+# OpenTofu
+.terraform/
+.terraform.lock.hcl
+*.tfstate*
