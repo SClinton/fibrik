@@ -38,9 +38,12 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
   with **OpenTelemetry-first ingestion** and an **extensible, community-friendly
   connectors framework**, including **AWS S3, Azure Blob/ADLS and Google Cloud
   Storage** as ingestion points. See `mvp-scope.md` and `connectors-framework.md`.
-- **$0 upfront:** the MVP is built and hosted on free tiers (OCI Always Free
-  ARM64 + k3s, GitHub, Cloudflare Tunnel; AWS/Azure/GCP free allowances for
-  storage-ingestion tests). See `zero-cost-mvp.md`.
+- **$0 upfront:** the MVP is built and hosted on free tiers: OCI Always Free
+  ARM64 + k3s for processing; **Cloudflare** (Pages for the UI, Workers for
+  webhook ingestion, R2, Tunnel, Access) and **GitHub** (Pages for the
+  docs/catalog/demo site, Actions, GHCR) for the edge and project
+  infrastructure; AWS/Azure/GCP free allowances for storage-ingestion
+  tests. See `zero-cost-mvp.md`.
 - **AI data optimization:** Gemini (and other LLMs, provider-agnostic) design
   data flows, remove unneeded storage and generate transformations. They act as
   compilers and analysts, never per event. See `ai-data-optimization.md`.

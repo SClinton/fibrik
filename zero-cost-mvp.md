@@ -81,7 +81,7 @@ heavy ones are tuned for low memory. The profile is `values-free.yaml` (Helm) /
 | Self-monitoring | VictoriaMetrics single-node + vmagent (lighter than Prometheus) and the OSDF UI health pages. Grafana optional | ~0.4 GB |
 | Auth | Built-in local users + OIDC login via free providers (GitHub, Google). No Keycloak in the lean profile | (shared) |
 | Content Git | A free GitHub repo (or local bare repo), with no Gitea in the lean profile | 0 |
-| Ingress | **Cloudflare Tunnel** (free), so no public IP or open ports are needed; optional Cloudflare Access free plan for an extra login layer | ~0.05 GB |
+| Ingress | **Cloudflare Tunnel** (free), so no public IP or open ports are needed; Cloudflare Access for SSO; UI optionally served from Cloudflare Pages (§4a) | ~0.05 GB |
 | LLM | External free-tier or BYO-key APIs through the LiteLLM SDK in-process (no proxy service). No local model in the lean profile | (shared) |
 | **Total** | | **~6.2 GB used, ~5.8 GB headroom** |
 
@@ -104,7 +104,7 @@ object storage allowance is too small, add Cloudflare R2's free tier
 | Source code, issues, project board | GitHub Free (public repo) | Public repos are recommended for an open source project. Private repos are free too, with lower Actions limits |
 | CI/CD | GitHub Actions (free for public repos, including arm64 Linux runners) | Multi-arch builds, unit tests, connector tests, Playwright E2E on Compose |
 | Container registry | GitHub Container Registry (free for public images) | Signed with cosign (free, keyless via GitHub OIDC) |
-| Docs site, Storybook, connector catalog site | GitHub Pages | |
+| Docs site, Storybook, connector catalog site, demo UI with mock data | **GitHub Pages** (see §4a) | Not for the product UI: GitHub's terms don't allow Pages to host commercial SaaS |
 | Dev environments | Laptops/Mac mini + Docker; GitHub Codespaces free monthly quota | |
 | Design and prototyping | Penpot (open source, free cloud or self-hosted) | |
 | Domain/TLS | Cloudflare Tunnel hostname on a domain you own, or a free `*.trycloudflare.com` URL for demos; TLS included | A custom domain is the one optional purchase (~$10/yr); not needed for the MVP |
@@ -114,6 +114,86 @@ object storage allowance is too small, add Cloudflare R2's free tier
 | LLM for the design partner | **The partner's own API key** (BYO key, zero cost to you), or a local model on their hardware or your Mac mini | Configured in Settings (FR-AGT-12) |
 | Threat intel feeds (later) | Open feeds (abuse.ch, etc.) | |
 | Test data | OTRF Security-Datasets, synthetic generators, Atomic Red Team output | |
+
+## 4a. Edge and serverless layer: Cloudflare and GitHub Pages
+
+Free edge and serverless services take **stateless, light work** off the single
+OCI VM, add an ingestion buffer that keeps working when the VM is down, and
+give the project a public face at $0. Heavy processing (OTel, Vector,
+ClickHouse, agents) **stays on OCI**. Workers can't run those engines, and
+their free CPU limits are measured in milliseconds per request.
+
+```mermaid
+flowchart LR
+  subgraph GH[GitHub - free]
+    GP[GitHub Pages<br/>project site • docs • connector catalog • Storybook • mock-data demo]
+    GA[Actions + GHCR<br/>CI • multi-arch images]
+  end
+  subgraph CF[Cloudflare - free plan]
+    PG[Cloudflare Pages<br/>product UI static app]
+    ACC[Access / Zero Trust<br/>SSO in front of UI + API]
+    WK[Workers<br/>webhook + HTTP ingest • edge API router • registry index]
+    R2[(R2<br/>webhook landing • lake/archive overflow • zero egress)]
+    R2C[R2 Data Catalog<br/>Iceberg REST - optional]
+    TUN[Tunnel]
+    WAI[Workers AI<br/>optional small-model provider]
+  end
+  subgraph OCI[OCI Always Free ARM64 - k3s]
+    OT[OTel gateway] --> V[Vector] --> CH[(ClickHouse)]
+    API[osdf-api • MCP • agents]
+    OBJ[object_storage connector]
+  end
+  SaaS[SaaS webhooks / HTTP sources] --> WK --> R2
+  R2 -- new objects --> OBJ --> V
+  User((User)) --> ACC --> PG
+  PG -- API calls --> ACC --> TUN --> API
+  V -- lake files --> R2
+  R2C -. catalog .- V
+  API -. optional .-> WAI
+```
+
+| Service | Role in OSDF | Free allowance (verify at sign-up) | Limits that shape the design |
+|---|---|---|---|
+| **GitHub Pages** | Project website, documentation, **connector catalog browser** (generated from the registry repo), Storybook, a clickable **demo of the UI with mock data** | 1 GB site, ~100 GB/month soft bandwidth; builds via Actions | **Not for the product UI or anything SaaS-like** (GitHub terms). Static only |
+| **Cloudflare Pages** | Hosts the **product UI** (React static build), so it loads even when the OCI VM is busy or down; preview deployments per PR | Free static hosting | Static only. The data API stays on OCI behind Access + Tunnel |
+| **Cloudflare Workers** | (1) **Webhook / HTTP ingestion endpoint**: verify signatures, add the ingest envelope, batch to R2 as NDJSON. (2) **Edge API router**: checks the Access JWT, rate-limits, and forwards to the Tunnel. (3) **Connector registry index API** for the in-product catalog. (4) Cron Triggers for tiny housekeeping jobs | ~100k requests/day | Very small CPU time per request (milliseconds), so no parsing at the edge, only validate and batch. Request volume suits SaaS webhooks, not syslog/firewall streams |
+| **R2** | Landing bucket for edge ingestion; **lake/archive overflow** with **zero egress fees** (also cheap to read from any cloud later) | ~10 GB storage + monthly operation allowances | Small. Lake retention planning must count R2 + OCI object storage together |
+| **R2 Data Catalog** (optional) | Managed **Iceberg REST catalog** for tables on R2, which could replace Lakekeeper in the lean profile (saves memory and a component) | Pricing announced May 2026 with a monthly free tier (1M catalog operations, 10 GB compaction); billing not yet enabled at the time of writing | Leave automatic compaction off, or within the free tier. Keep the catalog pluggable (saas doc FR-OFF-02) |
+| **Queues** (optional) | Decouple Worker ingest from R2 writes, and R2 event notifications → OSDF | Reportedly added to the Workers free plan in 2026; confirm the allowance | Polling R2 listings works if Queues isn't available |
+| **Access / Zero Trust** | SSO and device posture in front of the UI and API, with no IdP to run | Free for small teams (up to ~50 users) | Use OIDC in OSDF as well, so access doesn't depend on Cloudflare |
+| **Tunnel** | Ingress to OCI with no public IP and no open ports | Free | — |
+| **Workers AI** (optional) | Small-model provider for low-stakes tasks (template labeling drafts, summaries) behind the LLM gateway | Daily free allocation on select models | Check its data-use terms and set the provider's `trains_on_input` flag accordingly |
+| **D1 / KV / Durable Objects** | Not used for core state (Postgres on OCI stays the system of record) | — | D1's free plan enforces daily row limits from September 2026; avoid it for core state |
+
+**Other free options considered:** Vercel and Netlify (their hobby tiers have
+non-commercial terms, so Cloudflare Pages is the better UI host); Neon or
+Supabase free Postgres (an option to move the control-plane DB off the VM,
+at the cost of an external dependency); and the Grafana Cloud free tier (an
+option for operator monitoring instead of self-hosted VictoriaMetrics).
+
+**Trade-offs to accept or reject consciously:**
+- **Data passes through Cloudflare** on the webhook path and the UI/API path.
+  TLS is terminated at Cloudflare's edge. That's fine for the MVP and most
+  pilots, but document it for design partners with residency rules, and
+  offer a direct OTel ingestion path that bypasses Cloudflare.
+- **More moving parts.** Each edge piece is optional and switchable off with a
+  profile flag. The MVP must still run fully on the Mac mini or the OCI VM
+  alone.
+- **Free-plan limits** are enforced by hard failures (for example, Workers
+  request caps). Worker ingest returns `429` with retry hints, and sources
+  that can't retry should use the direct OTel path.
+
+**Requirements added (FR-EDGE):**
+
+| ID | Requirement | MVP |
+|---|---|---|
+| FR-EDGE-01 | Product UI deployable as a static app on Cloudflare Pages (API base URL configurable) | Must |
+| FR-EDGE-02 | Project site, docs, connector catalog browser and mock-data demo on GitHub Pages, built by Actions | Must |
+| FR-EDGE-03 | Worker-based webhook/HTTP ingest → R2 NDJSON batches → `object_storage` connector (R2 as an S3-compatible source) | Should |
+| FR-EDGE-04 | Cloudflare Tunnel + Access in front of the OCI deployment (with OSDF's own OIDC still enforced) | Must |
+| FR-EDGE-05 | R2 as an additional lake/archive bucket; R2 Data Catalog as an optional Iceberg catalog | Should |
+| FR-EDGE-06 | Workers AI as an optional LLM provider behind the gateway, with a data-use flag | Post |
+| FR-EDGE-07 | Every edge component is optional; the platform runs without Cloudflare | Must |
 
 ## 5. Cloud storage ingestion at $0 (S3, Azure Blob, GCS)
 
@@ -190,6 +270,13 @@ after the MVP or for paying deployments.
    infrastructure, with its expected monthly cost.
 
 ## Sources (free-tier terms change often; re-verify)
+- GitHub Pages limits and terms: https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits
+- Cloudflare free limits 2026 (third-party summary): https://eastondev.com/blog/pt/posts/dev/20260526-cloudflare-free-limits/
+- Cloudflare free tier 2026 cautions: https://agentdeals.dev/vendor/cloudflare
+- Cloudflare changelog (D1 free-plan daily limits from Sep 2026): https://13213614.previews.developers.cloudflare.com/changelog/
+- R2 Data Catalog pricing announced (May 2026): https://developers.cloudflare.com/changelog/post/2026-05-11-r2-data-catalog-pricing-announced/
+- R2 Data Catalog pricing: https://developers.cloudflare.com/r2/data-catalog/platform/pricing/
+- R2 Data Catalog public beta: https://blog.cloudflare.com/fr-fr/r2-data-catalog-public-beta/
 - OCI Always Free resources (official): https://docs.oracle.com/en-us/iaas/Content/FreeTier/resourceref.htm
 - InfoQ on OCI Always Free Ampere reduction (Jul 2026): https://infoq.com/news/2026/07/oracle-cloud-free-tier-limits/
 - What's actually free on OCI in 2026: https://macmyths.com/oracle-cloud-free-tier-whats-actually-free-in-2026/
