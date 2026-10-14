@@ -139,7 +139,7 @@ chart or code changes.
 
 | Day | Steps |
 |---|---|
-| 1 | Create GitHub org + repos (`fibrik`, `fibrik-content`, `fibrik-connectors`), Oracle Cloud (free-only), Google AI Studio key. Set budget alerts. Start `docs/free-tier-ledger.md` |
+| 1 | Create repos under the `SClinton` GitHub account (`fibrik`, `fibrik-content`, `fibrik-connectors`), Oracle Cloud (free-only), Google AI Studio key. Set budget alerts. Start `docs/free-tier-ledger.md` |
 | 2 | Helm chart skeleton + `make` targets. kind in CI deploys Postgres, ClickHouse, Lakekeeper, VictoriaMetrics, Caddy, Dex. Multi-arch images to GHCR with cosign |
 | 3 | Same chart on the Mac mini with k3d. Add `fibrik-otelcol` gateway + Vector + `fibrik-api`. A syslog line lands in ClickHouse and Iceberg (S3 bucket on the dev host: an OCI bucket or any S3-compatible endpoint) |
 | 4 | OpenTofu OCI module: VM, volume, bucket, network rules (443 only). Install k3s and Flux; Flux pulls the same chart with `values-free.yaml`. Caddy obtains a TLS certificate |

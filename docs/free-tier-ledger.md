@@ -17,7 +17,7 @@ Never put secret values in this file. Record only *where* a credential is kept.
 
 | Account | Purpose | Plan | Created | Created by | Billing card on file | Status |
 |---|---|---|---|---|---|---|
-| GitHub org `<org-name>` | Source, issues, Actions, GHCR, Pages | GitHub Free (public repos) | | | No | Not created |
+| GitHub account `SClinton` | Source, issues, Actions, GHCR (`ghcr.io/sclinton/*`), Pages (`sclinton.github.io/fibrik`) | GitHub Free (public repos) | Existing | SClinton | | Active |
 | Oracle Cloud tenancy | Primary MVP host (Ampere A1 + k3s) | **Free Tier only, never upgraded** | | | Yes (verification only) | Not created |
 | Google AI Studio / Gemini API | First LLM provider (synthetic data only) | Free tier, **no billing account linked** | | | No | Not created |
 | Google Cloud (storage test source) | GCS ingestion tests | Always Free | | | | Later (weeks 4–7) |
@@ -26,11 +26,14 @@ Never put secret values in this file. Record only *where* a credential is kept.
 
 ### GitHub repositories
 
+All Fibrik repositories, images, packages and sites live under the
+`SClinton` personal account. There is no GitHub organization.
+
 | Repo | Purpose | Visibility | Status |
 |---|---|---|---|
-| `fibrik` | Platform code, Helm chart, specs | Public | Exists as `SClinton/fibrik`; move to the org once it exists |
-| `fibrik-content` | Pipelines, detections, Agent Skills content | Public | Not created |
-| `fibrik-connectors` | Community connector registry | Public | Not created |
+| `SClinton/fibrik` | Platform code, Helm chart, specs | Public | Exists |
+| `SClinton/fibrik-content` | Pipelines, detections, Agent Skills content | Public | Not created |
+| `SClinton/fibrik-connectors` | Community connector registry | Public | Not created |
 
 ## 2. Allowances
 
@@ -59,7 +62,7 @@ account with no payment method can't be billed; record that instead.
 | Account | Alert type | Amount | Thresholds | Notifies | Set on | Verified (test email received) |
 |---|---|---|---|---|---|---|
 | Oracle Cloud | Budget on the root compartment | $1 / month | Actual 100%, forecast 100% | | | |
-| GitHub org | Budgets for Actions, Packages, Codespaces | $0, "stop usage" on | Alert at 100% | | | |
+| GitHub `SClinton` | Budgets for Actions, Packages, Codespaces | $0, "stop usage" on | Alert at 100% | | | |
 | Google (AI Studio project) | Not billable while no billing account is linked | — | — | — | | |
 
 ## 4. Credentials register
