@@ -117,6 +117,12 @@ object storage allowance is too small, add Cloudflare R2's free tier
 
 ## 4a. Edge and serverless layer: Cloudflare and GitHub Pages
 
+> **Portability update ([`initial-stack.md`](initial-stack.md), ADR-23):** the
+> initial stack uses only portable components (Caddy for ingress/TLS/UI, Dex
+> for OIDC, the in-collector webhook engine). The Cloudflare services below
+> are **optional add-ons** that can be placed in front of the portable core
+> later. GitHub Pages stays in use for the static docs/catalog site.
+
 Free edge and serverless services take **stateless, light work** off the single
 OCI VM, add an ingestion buffer that keeps working when the VM is down, and
 give the project a public face at $0. Heavy processing (OTel, Vector,

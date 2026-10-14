@@ -38,6 +38,9 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
   with **OpenTelemetry-first ingestion** and an **extensible, community-friendly
   connectors framework**, including **AWS S3, Azure Blob/ADLS and Google Cloud
   Storage** as ingestion points. See `mvp-scope.md` and `connectors-framework.md`.
+- **Portability first:** one Helm chart and multi-arch images run unchanged on
+  kind (CI), k3d (Mac mini) and k3s (free cloud VM), using only open interfaces.
+  The concrete one-service-per-category stack is in `initial-stack.md`.
 - **$0 upfront:** the MVP is built and hosted on free tiers: OCI Always Free
   ARM64 + k3s for processing; **Cloudflare** (Pages for the UI, Workers for
   webhook ingestion, R2, Tunnel, Access) and **GitHub** (Pages for the
@@ -74,6 +77,9 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
 8. [`ai-data-optimization.md`](ai-data-optimization.md): using Gemini and other
    LLMs to optimize data flows, eliminate unneeded storage and generate
    transformations, without per-event LLM cost.
+9. [`initial-stack.md`](initial-stack.md): **the bill of materials**. One
+   specific service per category, chosen for portability, with the
+   portability proof matrix and a day-by-day plan for the first week.
 
 ## Research caveats
 
