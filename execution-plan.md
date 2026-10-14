@@ -4,6 +4,13 @@
 - Date: 2026-10-14
 - Inputs: [`requirements.md`](requirements.md), [`architecture.md`](architecture.md)
 
+> **Scope update:** the MVP is now defined in [`mvp-scope.md`](mvp-scope.md):
+> a product with a full UI, on a single hosting platform, with OpenTelemetry-first
+> ingestion and the [connectors framework](connectors-framework.md). Its
+> 16-week timeline replaces milestones M3–M5 below. The phases here remain the
+> engineering detail for each capability. Where they say "Vector collector",
+> read "OTel Collector" (ADR-19).
+
 This plan gets you from an empty repository to a **running MVP on one machine**
 (see requirements §8), and then to a **production pilot**. It follows a
 **walking skeleton** approach: first get one event flowing end to end through

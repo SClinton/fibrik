@@ -32,6 +32,15 @@ the customer's, third-party assistants or vendor agents over **A2A**, go
 through one gateway with per-agent identity, policy, budgets and audit. See
 requirements GA and §5.11, and architecture §8.6–§8.11.
 
+## Current direction (latest decisions)
+
+- **MVP = a working product with a UI** on a **single hosting platform**,
+  with **OpenTelemetry-first ingestion** and an **extensible, community-friendly
+  connectors framework**, including **AWS S3, Azure Blob/ADLS and Google Cloud
+  Storage** as ingestion points. See `mvp-scope.md` and `connectors-framework.md`.
+- **Post-MVP:** a SaaS/BYOC hosting model across clouds, and compute offload to
+  Snowflake/Databricks. See `saas-byoc-and-compute-offload.md`.
+
 ## Documents
 
 1. [`requirements.md`](requirements.md): competitive capability analysis, then
@@ -41,6 +50,15 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
 3. [`execution-plan.md`](execution-plan.md): a phased plan from an empty repo
    to a running MVP on a laptop, then to a production pilot. It includes a
    walking-skeleton `docker compose` setup and exit criteria for each phase.
+4. [`mvp-scope.md`](mvp-scope.md): **authoritative MVP scope**. User
+   journeys, UX requirements, prioritized requirements (Must/Should/Post),
+   single-platform and OTel-first decisions, and a 16-week timeline.
+5. [`connectors-framework.md`](connectors-framework.md): the extensible
+   connector package format, generic engines (including S3/Blob/GCS
+   ingestion), developer tooling and community registry.
+6. [`saas-byoc-and-compute-offload.md`](saas-byoc-and-compute-offload.md):
+   requirements assessment for managed BYOC hosting on AWS/Azure/GCP/OCI and
+   for offloading processing to Snowflake/Databricks (post-MVP).
 
 ## Research caveats
 

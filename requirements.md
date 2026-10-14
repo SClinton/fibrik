@@ -336,7 +336,8 @@ the tests can trace back to it.
 | FR-COL-02 | Pull from cloud and SaaS APIs: AWS CloudTrail/S3 (SQS notification), Azure Event Hub, GCP Pub/Sub, Okta, M365/Entra, GitHub audit | P1 |
 | FR-COL-03 | Lightweight edge agent for Linux/Windows/macOS: files, journald, Windows Event Log, host metrics | P1 |
 | FR-COL-04 | Central **fleet management** of agents and workers: enroll, group, push config, health, version, rollout/rollback (OpAMP-compatible) | P1 |
-| FR-COL-05 | Connector SDK: a declarative YAML connector for REST APIs (auth, pagination, checkpointing, rate limits) | P1 |
+| FR-COL-05 | **Extensible connectors framework**: a declarative connector package (manifest + mapping + presets + samples), generic engines (`otel_receiver`, `object_storage`, `http_pull`, `queue`, `webhook`), generated UI forms, a CLI and offline tests, a community registry with trust tiers. Detailed in [`connectors-framework.md`](connectors-framework.md) (FR-CON-01..16) | P0 (lite) |
+| FR-COL-11 | **Cloud storage ingestion points**: AWS S3, Azure Blob/ADLS Gen2 and Google Cloud Storage via notifications (SQS / Event Grid / Pub/Sub) and backfill, with formats, checkpoints and cross-account identity (connectors-framework §5) | P0 |
 | FR-COL-06 | Tag every event at ingest with `source_id`, `tenant_id`, `collector_id`, receipt time and raw size | P0 |
 | FR-COL-07 | Buffer at the edge (disk) when downstream is unavailable | P1 |
 | FR-COL-08 | Support the **OpenTelemetry Collector** (upstream contrib or a custom OCB build) as an edge/gateway runtime alongside Vector, managed through the same OpAMP fleet manager. OSDF pipeline YAML can render to OTel Collector config (receivers/processors/exporters + OTTL) for edge-side filtering, masking and routing | P1 |
@@ -548,6 +549,11 @@ results with each proposal.
 ---
 
 ## 8. MVP definition (what "initial implementation up and running" means)
+
+> **Superseded for scope and priority by [`mvp-scope.md`](mvp-scope.md)**:
+> an MVP with a full user experience, on a single hosting platform, with
+> OpenTelemetry-first ingestion and the connectors framework. The list below
+> is kept as the original technical baseline.
 
 The MVP is done when, on one machine with `docker compose up`:
 
