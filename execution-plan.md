@@ -15,22 +15,30 @@ agent is only as good as the checks that verify its output.
 
 ## 0. Recommended approach in one page
 
-1. **Week 1: decide and bootstrap.** Answer the open questions in requirements §10,
-   create the monorepo, CI and the Compose stack skeleton.
+1. **Week 1: decide, measure the cost baseline, bootstrap.** Answer the open
+   questions in requirements §10, capture the current cost baseline (§1.1a),
+   and create the monorepo, CI and the Compose stack skeleton.
 2. **Weeks 1–3: data-plane skeleton.** Syslog → Vector → Kafka → Vector worker →
-   ClickHouse + Iceberg, queryable through Trino. No UI. No AI.
+   ClickHouse + Iceberg, queryable through Trino, with byte metering per source
+   and destination. No UI. No AI.
 3. **Weeks 3–5: content model and CLI.** OSDF YAML → rendered Vector config,
-   `osdf validate|test|deploy`, 3 source packs to OCSF, DLQ, and Grafana health.
-4. **Weeks 5–7: detections.** Sigma → ClickHouse SQL, scheduled runner, alerts
+   `osdf validate|test|deploy`, packs for the top-cost sources mapped to OCSF,
+   DLQ, and Grafana health.
+4. **Weeks 5–7: cost reduction toolkit.** Rate card, cost ledger, reduction
+   functions, tier policies, what-if simulation, detection-safety check, and a
+   savings dashboard. Optionally run an early shadow pilot on real sources to
+   prove savings.
+5. **Weeks 7–9: detections.** Sigma → ClickHouse SQL, scheduled runner, alerts
    table + webhook, detection CI with test fixtures, and 10+ rules.
-5. **Weeks 7–10: agents.** LLM gateway, MCP server, eval harness, then
-   search → onboarding → detection → triage agents (in that order), all
-   producing PRs or annotations.
-6. **Weeks 10–14: control plane and fleet.** API + RBAC, OpAMP fleet/sidecar,
-   minimal UI (alert queue, sources, proposals), replay, and drift detection.
-7. **Weeks 14–20: pilot hardening.** Helm/Kubernetes, load testing, security
+6. **Weeks 9–12: agents.** LLM gateway, MCP server, eval harness, then
+   cost optimization → search → onboarding → detection → triage agents (in
+   that order), all producing PRs or annotations.
+7. **Weeks 12–16: control plane and fleet.** API + RBAC, OpAMP fleet/sidecar,
+   minimal UI (alert queue, sources, proposals), replay, drift detection and
+   cost budgets.
+8. **Weeks 16–22: pilot hardening.** Helm/Kubernetes, load testing, security
    review, federated search, correlation, and packs. Then run a real pilot
-   alongside an existing SIEM.
+   alongside an existing SIEM, judged first on net cost reduction.
 
 **Team assumption:** 3–5 engineers (one data/infra, one or two backend/Python,
 one detection engineer, one ML/agent engineer, plus a part-time frontend
@@ -52,6 +60,27 @@ engineer). With 1–2 people, roughly double the timeline and drop the UI.
 | Object store | SeaweedFS for local; cloud S3 in pilot |
 | Git host for content PRs | Gitea in Compose; GitHub/GitLab in pilot |
 
+### 1.1a Cost baseline assessment (do this first; it shapes everything else)
+Cost reduction is the primary use case, so measure where the money goes before
+building anything:
+1. **SIEM pricing model** (ingest $/GB, workload/compute units, or flat
+   enterprise license) and the effective $/GB. This decides which levers matter
+   (see requirements §10, question 0).
+2. **GB/day per source and sourcetype/table** for the last 30 days, from SIEM
+   license/usage reports (for example, Splunk `license_usage.log`, Sentinel
+   `Usage` table).
+3. **Which data is actually used:** fields and event types referenced by
+   detections, saved searches and dashboards. Export the SIEM rule and search
+   inventory.
+4. **Retention requirements** per source (compliance vs operational).
+5. **Current pipeline tool license** cost (Cribl/BindPlane/other) and
+   **engineering hours** spent on onboarding and parser maintenance per month.
+6. Pick the **top 5–10 sources by cost**. These become the packs and the pilot
+   scope, instead of a generic set.
+
+Output: `docs/cost-baseline.md` plus a first `rates.yaml` (architecture §5.7).
+This is the baseline against which the ≥ 40% target is measured.
+
 ### 1.2 Repositories
 
 ```
@@ -71,9 +100,9 @@ osdf/                           # code (Apache-2.0)
     agents/                     # onboarding, detection, triage, search, tuning, drift
     mcp_server/                 # MCP tools
     workflows/                  # Temporal workflows/activities (blueprints, replay)
-  ui/                           # React + TS (Phase 5)
+  ui/                           # React + TS (Phase 6)
   deploy/compose/               # docker-compose.yml + configs
-  deploy/helm/                  # Phase 6
+  deploy/helm/                  # Phase 7
   evals/                        # golden datasets + scorers
   testdata/                     # sample logs (OTRF Security-Datasets, synthetic)
   docs/adr/
@@ -269,15 +298,19 @@ sinks:
    plus `dlq`, `source_stats`, `signals` and `alerts`.
 3. Build the MVP lake writer (`osdf lake write`): consume `ocsf.*`, micro-batch to
    Arrow, write with pyiceberg to `gold.ocsf_<class>`. Plan to replace it with the
-   Iceberg Kafka Connect sink in Phase 6.
+   Iceberg Kafka Connect sink in Phase 7.
 4. Add a test-data loader, `make seed`. It replays OTRF Security-Datasets and
    synthetic sshd/CloudTrail/Windows events at a configurable EPS.
 5. Write an E2E test (`make e2e`): send N events, then assert N rows in ClickHouse,
    and N rows in Iceberg via Trino within 2 minutes.
+6. **Metering from day one:** enable Vector `internal_metrics`, and write
+   per-source `bytes_in` (raw, at the collector) and per-destination
+   `bytes_out` into a ClickHouse `cost_ledger` table in 5-minute buckets
+   (architecture §5.7).
 
 **Exit criteria:** `make up && make seed && make e2e` passes. Trino runs
 `SELECT count(*) FROM iceberg.gold.ocsf_authentication` successfully. You can show
-a DLQ entry for a malformed line.
+a DLQ entry for a malformed line. `cost_ledger` shows bytes in and out per source.
 
 ---
 
@@ -299,9 +332,11 @@ tests and deploys it.
    - `osdf validate`: schema + references + VRL compile (`vector validate`)
    - `osdf test`: `vector test` + OCSF validation of outputs + golden diffs
    - `osdf preview <pipeline> --sample file`: before/after diff and size reduction
-   - `osdf deploy --env dev`: render, write to the worker config dir, and let Vector `--watch-config` reload. OpAMP comes in Phase 5
+   - `osdf deploy --env dev`: render, write to the worker config dir, and let Vector `--watch-config` reload. OpAMP comes in Phase 6
 5. **Three packs:** `linux-sshd`, `windows-security` (4624/4625/4688/4720…),
    and `aws-cloudtrail`, each with ≥ 10 fixtures and expected OCSF output.
+   If the cost baseline (§1.1a) names different top-cost sources (for example,
+   firewall traffic, DNS, VPC flow, EDR telemetry), build those packs first.
 6. **Health v1:** a Vector `internal_metrics` → Prometheus → Grafana
    dashboard (events in/out per source, drop %, DLQ rate). A ClickHouse
    `source_stats` table fed by a scheduled job. A **silent-source** alert.
@@ -315,7 +350,57 @@ mapping fails CI. Grafana shows volume and reduction.
 
 ---
 
-## 4. Phase 3: Detections (weeks 5–7)
+## 4. Phase 3: Cost reduction toolkit and early-value pilot (weeks 5–7)
+
+**Goal:** deliver measurable savings on real data **before** building
+detections and agents. This is the primary use case, and the earliest point
+where OSDF can pay for itself.
+
+### Tasks
+1. **Rate card + cost views:** `environments/<env>/rates.yaml`, plus ClickHouse
+   views that join `cost_ledger` with the rate card (baseline cost, actual cost,
+   net savings) (FR-CST-01/02/04).
+2. **Baseline shadow meter:** for each source, record the raw size that would
+   have gone to the SIEM. This is the "without OSDF" number (FR-CST-03).
+3. **Reduction function library** in the OSDF YAML → VRL renderer
+   (FR-CST-05): `drop_fields`, `drop_if_default`, `drop_raw_after_parse`,
+   `dedupe` (keyed, windowed), `suppress` (by event ID/signature with
+   counts), `aggregate_to_metric`, `sample` (with a kept-sample-rate field so
+   counts can be scaled back up), `truncate`, `keep_fields` per destination. Each
+   function gets unit tests and a documented typical saving.
+4. **Tier policies** (FR-CST-06): `detect-critical | investigate | compliance |
+   drop` per route, rendered to fan-out (SIEM + lake, lake only, archive only).
+   The archive tier writes compressed raw files to a cheap bucket/class.
+5. **`field_usage` v1:** import the SIEM rule and saved-search inventory from
+   §1.1a. Extract the referenced fields/event types (SPL/KQL parsing, best
+   effort, plus manual overrides in YAML). Later, Phase 4 adds fields from
+   compiled Sigma rules.
+6. **Detection-safety check** (FR-CST-07) and **what-if simulation**
+   (FR-CST-08) as CLI commands:
+   `osdf cost simulate <pipeline> --sample lake:24h` and
+   `osdf cost check <pipeline>`. Both run in content-repo CI.
+7. **Savings dashboard** (Grafana): baseline vs actual GB/day and $/month per
+   source and destination, net savings after OSDF infra cost, and top-10 most
+   expensive sources/event types.
+8. **SIEM destinations:** Splunk HEC and/or Sentinel (Logs Ingestion API)
+   sinks for the pilot SIEM, so reduced data actually reaches it.
+9. **Storage efficiency:** tune Parquet/ZSTD, sort order and compaction, and
+   report the compression ratio per table (FR-CST-14).
+
+### Early-value pilot (optional, recommended)
+Point 2–3 of the top-cost sources from §1.1a at OSDF in **shadow mode**
+(tee the data, the SIEM stays primary). Run for 1–2 weeks, then present the
+savings dashboard. This gives the business case real numbers before the
+rest of the build.
+
+**Exit criteria:** the savings dashboard shows ≥ 30% SIEM-bound volume
+reduction on the seeded/reference dataset. `osdf cost check` blocks a change
+that removes a field used by an imported rule. Net savings (including OSDF
+infra) are computed and shown.
+
+---
+
+## 5. Phase 4: Detections (weeks 7–9)
 
 **Goal:** detection-as-code that runs on the hot store, with CI.
 
@@ -330,7 +415,7 @@ mapping fails CI. Grafana shows volume and reduction.
    ephemeral ClickHouse (testcontainers), runs the compiled SQL, and asserts
    hits and misses. This runs in content-repo CI.
 4. **Runner:** a scheduled loop (APScheduler for now; it moves to Temporal in
-   Phase 4) with watermarks, lateness overlap and dedup keys. It writes to
+   Phase 5) with watermarks, lateness overlap and dedup keys. It writes to
    `signals` / `alerts`, and posts alerts to a webhook (DFIR-IRIS or a generic one).
 5. **Content:** import 10–20 SigmaHQ rules that match the three packs, plus
    Atomic Red Team–style fixtures. Write 2 correlation rules (brute force then
@@ -345,11 +430,11 @@ alerts. A backtest works.
 
 ---
 
-## 5. Phase 4: Agent foundation and first agents (weeks 7–10)
+## 6. Phase 5: Agent foundation and first agents (weeks 9–12)
 
-**Goal:** the four P0 agents work end to end, with evals and safety checks.
+**Goal:** the five P0 agents work end to end, with evals and safety checks.
 
-### 5.1 Foundation (week 7)
+### 6.1 Foundation (week 9)
 1. Add **LiteLLM** to Compose with ≥ 2 models configured (one API model, one local
    model through Ollama/vLLM). Turn on budget limits and a PII-masking egress hook.
 2. **Langfuse** for tracing. Wrap every agent run in a trace ID that is stored
@@ -357,7 +442,8 @@ alerts. A backtest works.
 3. **OSDF MCP server** (Python MCP SDK) with read tools first: `get_schema`,
    `list_sources`, `source_health`, `search` (read-only ClickHouse/Trino,
    time-range required, row/byte limits), `get_alert`, `similar_alerts`,
-   `coverage_for_technique`, `ocsf_class_lookup`. Then validation tools:
+   `coverage_for_technique`, `ocsf_class_lookup`, `cost_report`, `field_usage`.
+   Then validation tools: `simulate_pipeline`, `cost_check`,
    `test_pipeline`, `validate_ocsf`, `compile_rule`, `test_rule`, `backtest_rule`.
    Then one write tool: `propose_change(files, title, body)`, which creates a
    branch and PR in Gitea/GitHub.
@@ -368,31 +454,32 @@ alerts. A backtest works.
 6. **Eval harness:** the `evals/` layout, scorers, and `make eval` with a
    summary table per agent per model. Gate on regressions in CI.
 
-### 5.2 Agents, in build order
+### 6.2 Agents, in build order
 | Order | Agent | Why this order | Done when |
 |---|---|---|---|
-| 1 | **Search agent** | Simplest. It exercises MCP, schema retrieval and guardrails | ≥ 70% execution accuracy on 50 NL→SQL eval pairs |
-| 2 | **Onboarding agent** | Highest value (Databahn Cruz / Anvilogic onboard). It depends on Phase 2 validators | For 5 held-out log types it opens PRs whose tests pass on the first try ≥ 60% of the time |
-| 3 | **Detection engineering agent** | Depends on the Phase 3 compiler and tests | Given 10 ATT&CK techniques/CTI snippets, ≥ 70% of PRs compile, pass tests and have a sane backtest volume |
-| 4 | **Triage agent** | Needs alerts, search tools and context | On a labeled set of ≥ 200 alerts: precision on "benign" ≥ 90%, malicious recall ≥ 95%. Every verdict cites event IDs |
+| 1 | **Cost optimization agent** | Serves the primary use case directly. It builds on the Phase 3 ledger, simulation and safety check, and mostly drives deterministic tools | On the reference dataset, it finds ≥ 80% of the savings a human expert finds, and every PR passes `osdf cost check` |
+| 2 | **Search agent** | Simplest. It exercises MCP, schema retrieval and guardrails | ≥ 70% execution accuracy on 50 NL→SQL eval pairs |
+| 3 | **Onboarding agent** | Biggest labor-cost saving (Databahn Cruz / Anvilogic onboard). It depends on Phase 2 validators | For 5 held-out log types it opens PRs whose tests pass on the first try ≥ 60% of the time |
+| 4 | **Detection engineering agent** | Depends on the Phase 4 compiler and tests | Given 10 ATT&CK techniques/CTI snippets, ≥ 70% of PRs compile, pass tests and have a sane backtest volume |
+| 5 | **Triage agent** | Needs alerts, search tools and context | On a labeled set of ≥ 200 alerts: precision on "benign" ≥ 90%, malicious recall ≥ 95%. Every verdict cites event IDs |
 
 Agent design pattern (all agents):
 `plan → gather (tools) → draft → verify (deterministic tools) → repair loop (≤ N) → package (artifacts + evidence + confidence) → propose`.
 If verification fails after N repairs, the agent opens a **draft** PR labeled
 `needs-human` with the failure report. It never fails silently.
 
-### 5.3 Minimal analyst loop
+### 6.3 Minimal analyst loop
 - A small page (or Grafana panel + webhook) that lists alerts with the triage
   verdict, a summary, evidence links, and **agree/disagree** buttons that write
   to a `feedback` table. Feedback becomes both eval data and tuning-agent input.
 
-**Exit criteria:** MVP items 4–8 from requirements §8 are demonstrated live.
+**Exit criteria:** MVP items 4–8 and 10 from requirements §8 are demonstrated live.
 `make eval` publishes a scorecard. An external MCP client (for example, Claude
 Code or Claude Desktop) can connect to the OSDF MCP server and run a search.
 
 ---
 
-## 6. Phase 5: Control plane, fleet, UI, replay and drift (weeks 10–14)
+## 7. Phase 6: Control plane, fleet, UI, replay and drift (weeks 12–16)
 
 ### Tasks
 1. **osdf-api** (FastAPI): sources, destinations, worker groups, deployments,
@@ -415,9 +502,9 @@ Code or Claude Desktop) can connect to the OSDF MCP server and run a search.
 6. **Schema registry and drift:** a job that profiles samples per source (field
    set, types, parse rate, unmapped ratio) hourly, stores versions, and
    triggers the **drift remediation agent** blueprint when thresholds are crossed.
-7. **Pipeline optimization agent** using a `field_usage` table, which is
-   populated by parsing compiled detection SQL and saved searches for
-   referenced fields.
+7. **Cost budgets and anomaly alerts** per source/destination (FR-CST-09),
+   and a scheduled blueprint that runs the cost optimization agent weekly on
+   the top-cost sources.
 
 **Exit criteria:** a fresh Linux VM enrolls as an edge node and receives config
 from the UI. Approving an agent PR in the UI deploys it to the workers with no CLI.
@@ -425,7 +512,7 @@ A deliberate format change in seeded data triggers a drift PR.
 
 ---
 
-## 7. Phase 6: Pilot hardening (weeks 14–20)
+## 8. Phase 7: Pilot hardening (weeks 16–22)
 
 ### Tasks
 1. **Helm umbrella chart:** Strimzi, the ClickHouse operator, CloudNativePG,
@@ -453,13 +540,15 @@ A deliberate format change in seeded data triggers a drift PR.
 ### Pilot (run side by side, 4–6 weeks)
 - Mirror 3–5 real sources (through Kafka tee or SIEM forwarding) into OSDF
   while the SIEM stays primary.
-- Measure: volume reduction to the SIEM, detection parity, onboarding time with the
-  agent, triage agreement rate versus analysts, and cost per GB.
+- Measure, **cost first**: net total cost vs the §1.1a baseline (target ≥ 40%),
+  SIEM-bound GB/day reduction, OSDF infra cost per TB, detection parity (zero
+  coverage lost), onboarding hours vs baseline, and triage agreement rate versus
+  analysts.
 - Go/no-go review against the success metrics in requirements §9.
 
 ---
 
-## 8. Day-one checklist (the first commands)
+## 9. Day-one checklist (the first commands)
 
 ```bash
 # 1. repos
@@ -478,27 +567,31 @@ logger -n 127.0.0.1 -P 5514 -d "Failed password for root from 203.0.113.7 port 5
 curl -s 'http://localhost:8123/?query=SELECT+count()+FROM+osdf.ocsf_authentication'
 ```
 
-## 9. Risk register
+## 10. Risk register
 
 | Risk | Impact | Mitigation |
 |---|---|---|
 | LLM-generated parsers and rules are wrong in subtle ways | Bad data / missed detections | Deterministic tests are mandatory. Fixtures come from real samples. Use shadow mode before production. Eval gates in CI |
-| Prompt injection through log content | Agent misuse, data exfiltration | No shell or network for agents, typed tools only, PR-only writes, OPA, egress masking, red-team tests in Phase 6 |
+| Prompt injection through log content | Agent misuse, data exfiltration | No shell or network for agents, typed tools only, PR-only writes, OPA, egress masking, red-team tests in Phase 7 |
 | Sigma backend gaps for ClickHouse/Trino | Rules can't compile | Own the backend. Fail loudly. Allow raw-SQL rules as an escape hatch |
 | License changes in dependencies | Forced migration | Abstractions (OSDF YAML over Vector, S3 API, Iceberg, MCP). License check in CI (`osv`/`scancode`) |
 | Operational complexity (many services) | Slow adoption | Single-node appliance mode, a one-command Compose setup, and Helm with sane defaults. Keep Flink and Trino optional for small installs (DuckDB fallback) |
 | Scope creep toward a full SIEM/SOAR | Never ship | Non-goals in requirements §2. Integrate with DFIR-IRIS/Shuffle/existing SIEM |
 | Triage autonomy erodes analyst trust | Rejection | Start at L0/L1. Show evidence. Track the agreement rate publicly. Only allow auto-close above measured precision |
 | Vendor feature claims we benchmark against are unverified | Wrong targets | Set targets from our own pilot measurements, not vendor marketing |
+| Savings are eaten by OSDF's own infra and ops cost | No net benefit | Report **net** savings only (FR-CST-12), right-size with the appliance mode, keep optional components off by default, and count ops hours in the pilot |
+| Aggressive reduction drops data a future investigation needs | Missed detection or a failed investigation | Raw archive is always kept (FR-PIP-04), the detection-safety check runs in CI, and selective replay from the lake to the SIEM is available on demand |
+| SIEM pricing model limits volume-based savings (workload or flat licensing) | Lower savings than planned | Baseline assessment first. Under workload pricing, move detections and hunting to the lake/ClickHouse instead |
 
-## 10. Milestone summary
+## 11. Milestone summary
 
 | Milestone | Week | Demo |
 |---|---|---|
-| M0 Bootstrap | 1 | `make up` on empty stack, CI green |
-| M1 Skeleton | 3 | syslog → OCSF in ClickHouse + Iceberg; Trino query |
-| M2 Content | 5 | GitOps packs, `osdf test/deploy`, Grafana health, reduction % |
-| M3 Detect | 7 | 10+ Sigma rules in CI, alerts to webhook, backtest, ATT&CK layer |
-| **M4 MVP** | 10 | Search, onboarding, detection and triage agents + MCP + eval scorecard |
-| M5 Platform | 14 | UI, fleet/OpAMP, replay, drift agent, optimization agent |
-| M6 Pilot-ready | 20 | Helm, perf-tested, security reviewed, federated search, SIEM deploy |
+| M0 Bootstrap + baseline | 1 | `make up` on empty stack, CI green, `cost-baseline.md` with top-cost sources |
+| M1 Skeleton | 3 | syslog → OCSF in ClickHouse + Iceberg; Trino query; bytes metered |
+| M2 Content | 5 | GitOps packs, `osdf test/deploy`, Grafana health |
+| **M3 Cost value** | 7 | Savings dashboard (baseline vs actual $), reduction library, tiering, what-if + safety check; optional shadow pilot results |
+| M4 Detect | 9 | 10+ Sigma rules in CI, alerts to webhook, backtest, ATT&CK layer |
+| **M5 MVP** | 12 | Cost optimization, search, onboarding, detection and triage agents + MCP + eval scorecard |
+| M6 Platform | 16 | UI, fleet/OpAMP, replay, drift agent, cost budgets |
+| M7 Pilot-ready | 22 | Helm, perf-tested, security reviewed, federated search, SIEM deploy; pilot judged on net cost reduction |

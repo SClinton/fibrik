@@ -8,6 +8,11 @@
 
 ## 1. Architectural principles
 
+0. **Cost is the primary design driver** (requirements G0). Every component
+   choice and default is judged by cost per GB moved, stored and searched,
+   and by engineer hours saved. Savings must be metered, not estimated
+   (§5.7). The runtime transformation path is deterministic and CPU-bound;
+   **LLMs are never called per event** (NFR-COST-03).
 1. **Assemble, don't reinvent.** Use proven open source engines for the
    heavy parts (stream transport, transforms, storage, query, workflow).
    OSDF's own code is the **control plane, the content model, the
@@ -333,6 +338,65 @@ using `MergeTree` ordered by `(tenant_id, class_uid, time)`. It also holds the
 records which fields each detection and saved search reads, drives the
 optimization agent.
 
+### 5.7 Cost architecture (primary use case)
+
+**Where the money goes and which OSDF lever removes it:**
+
+| Cost driver | Lever in OSDF | Component | Typical effect (to verify in pilot) |
+|---|---|---|---|
+| SIEM ingest/license | Tiered routing: only detect-critical events and fields go to the SIEM | Route policies + reduction functions on Vector workers | 30–60% fewer GB/day to the SIEM |
+| SIEM ingest/license | Field reduction: drop raw duplicate fields after parsing, nulls/defaults, verbose blobs | `reduce` steps, `keep_fields` per destination | 20–40% smaller events |
+| SIEM ingest/license | Dedup, suppression, log-to-metric aggregation for chatty sources (firewall allow, DNS, flow, health checks) | Vector `dedupe`/`reduce`/`log_to_metric`, Kafka keyed partitioning | 50–90% fewer events for those sources |
+| SIEM retention | Keep a short window in the SIEM; long retention in the Iceberg lake; search in place | Lake + Trino; selective replay | Retention cost moves from SIEM pricing to object-storage pricing |
+| SIEM workload/compute | Run detections and hunts on ClickHouse or the lake instead of in the SIEM | Detection runner, compiled Sigma | Lower SIEM search load |
+| Storage | Parquet + ZSTD, sort by `(tenant, class, time)`, compaction, TTL tiers | Lake writer, compaction jobs, ClickHouse TTL | 10–20× compression vs raw text |
+| Transformation compute | Efficient Rust engine (Vector), one parse per event (fan out after parsing), no per-event LLM, autoscaling on Kafka lag | Workers + KEDA | Linear CPU cost per EPS |
+| Pipeline tool licenses | Open source replaces Cribl/BindPlane/Databahn licenses | Whole platform | License line removed; offset by OSDF infra + ops (shown in the net figure) |
+| Engineering labor | Onboarding, drift, optimization and detection agents produce tested PRs | Agent layer | Fewer hours per source and per rule |
+
+**Metering flow:**
+
+```mermaid
+flowchart LR
+  V[Vector internal_metrics<br/>bytes/events per component] --> P[Prometheus]
+  V --> CL[(ClickHouse cost_ledger<br/>5-min buckets)]
+  SH[Baseline shadow meter<br/>raw bytes per source/destination] --> CL
+  RC[Rate card<br/>Git: environments/*/rates.yaml] --> CV[Cost views]
+  CL --> CV
+  INF[Platform infra cost<br/>node-hours, storage GB, tokens] --> CV
+  CV --> G[Grafana savings dashboard]
+  CV --> OPT[Cost optimization agent]
+  FU[(field_usage<br/>from detections, searches, dashboards)] --> OPT
+  OPT --> PR[Reduction PR<br/>what-if + safety check]
+```
+
+- **Cost ledger schema** (ClickHouse): `ts, tenant_id, source_id, route_id,
+  pipeline_version, destination_id, tier, events_in, bytes_in, events_out,
+  bytes_out, baseline_bytes`. Cost views join it with the rate card, so
+  changing a price recomputes history without re-metering.
+- **Baseline** is the raw size at the collector (before any reduction) priced
+  at the current SIEM rate. It is what you would pay without OSDF.
+- **Net savings** = baseline cost − (SIEM cost after reduction + lake storage
+  + OSDF infrastructure + LLM tokens). This net figure is the headline number.
+- **What-if simulation** runs the proposed pipeline in the validator sandbox
+  against a 24 h sample read from Iceberg, and writes projected rows to
+  `cost_ledger_sim`.
+- **Detection-safety check**: the set of fields and classes removed by a
+  change is intersected with `field_usage` and with every production rule's
+  `requires`. A non-empty intersection blocks the change.
+
+```yaml
+# osdf-content/environments/prod/rates.yaml
+currency: USD
+destinations:
+  splunk-prod:   { model: ingest, usd_per_gb: 4.00 }   # example value; use your contract
+  sentinel-prod: { model: ingest, usd_per_gb: 2.50 }
+  lake-warm:     { model: storage, usd_per_gb_month: 0.023 }
+  archive:       { model: storage, usd_per_gb_month: 0.004 }
+compute:         { usd_per_vcpu_hour: 0.04 }
+llm:             { default_usd_per_mtok_in: 3.0, default_usd_per_mtok_out: 15.0 }
+```
+
 ---
 
 ## 6. Detection architecture
@@ -467,7 +531,7 @@ flowchart LR
 |---|---|---|---|---|
 | Onboarding | Sample logs / source endpoint | `sample_source`, `similar_parsers`, `ocsf_class_lookup`, `test_pipeline`, `validate_ocsf` | `vector test` passes, OCSF schema validation, ≥ X% fields mapped, no `unmapped` required fields | PR with VRL, mapping, route, fixtures, report |
 | Drift remediation | Drift event (diff of samples) | `get_schema_history`, `get_dlq_samples`, `test_pipeline` | Old fixtures still pass and new samples parse | PR with patch |
-| Pipeline optimization | Source ID | `field_usage`, `volume_stats`, `detections_requiring` | Simulated reduction on 24 h sample; no field required by any production rule is removed | PR + projected savings |
+| **Cost optimization** (built first) | Top-cost sources from `cost_ledger`, or a source ID | `cost_ledger`, `field_usage`, `volume_stats`, `detections_requiring`, `simulate_pipeline` | What-if on 24 h sample; detection-safety check passes (no field or class needed by a production rule, search or dashboard is removed) | PR with reduction steps, projected GB/day and $/month saved |
 | Detection engineering | CTI text/URL/STIX, technique ID | `coverage_for_technique`, `search_rules_corpus`, `compile_rule`, `backtest_rule`, `data_available` | Compiles for all targets, positive/negative tests pass, backtest volume under threshold | PR with Sigma rule, tests, backtest report |
 | Tuning | Rule ID | `rule_health`, `triage_outcomes`, `backtest_rule` | Backtest shows FP reduction with no loss on labeled TPs | PR with exception/logic patch |
 | Search | NL question | `get_schema`, `search` (read-only), federated adapters | Query parses, EXPLAIN passes, cost under budget | Answer + query + results |
@@ -549,7 +613,7 @@ tenant-scoped, and agents run with tenant-scoped credentials.
 | **Kubernetes HA** | Production | Helm umbrella chart. Strimzi Kafka (3+ brokers), ClickHouse via operator (2 replicas × N shards), Vector as Deployments per worker group with HPA on consumer lag, Lakekeeper ×2, Trino coordinator + workers, Temporal HA, Postgres HA (CloudNativePG), object storage from the cloud or Ceph |
 | **Hybrid** | Distributed enterprise / MSSP | Central control plane. Worker groups in each site/VPC connect outbound to the control plane (OpAMP over mTLS) and to the regional Kafka |
 
-**Sizing rule of thumb (to validate in Phase 5):** about 1 vCPU per 5–10k EPS
+**Sizing rule of thumb (to validate in Phase 7 performance testing):** about 1 vCPU per 5–10k EPS
 for parse + map in Vector. Kafka should handle 2–3× peak ingest throughput, with
 replication factor 3. ClickHouse compresses OCSF JSON 8–15×. Iceberg/Parquet
 compresses 10–20× versus raw text.
@@ -570,3 +634,4 @@ compresses 10–20× versus raw text.
 | ADR-08 | MCP as the only tool interface for agents | One tool surface for internal agents and external assistants, with policy enforced once | MCP spec is still changing, so pin the version |
 | ADR-09 | Python control plane, Go edge components | Speed of development plus the AI ecosystem; static binaries at the edge | Two toolchains |
 | ADR-10 | Two edge runtimes (Vector and the OTel Collector) behind one OSDF YAML and one OpAMP fleet manager | BindPlane shows that OTel + OpAMP is becoming the standard for agent fleets. Supporting it avoids rip-and-replace for OTel shops | Renderer and test matrix for two engines. Edge-side OTel pipelines support a subset of functions (filter, mask, route, enrich); OCSF mapping stays on Vector workers |
+| ADR-11 | Cost metering is built into the data plane from Phase 1, with a Git-versioned rate card | Cost reduction is the primary use case, and savings that can't be measured can't be defended to finance | Extra metrics cardinality. Mitigated by 5-minute buckets and by attributing per route, not per event |

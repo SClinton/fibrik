@@ -34,9 +34,31 @@ Commercial tools solve parts of this problem:
 
 No open source project combines all of this. OSDF fills that gap.
 
+All four vendors sell mainly on **cost reduction**: send less data to the
+SIEM, store the rest cheaply, and spend less engineering time. OSDF aims to
+deliver those savings without adding a new commercial license, and to make
+every saving **measurable and attributable** to a source, route and destination.
+
 ## 2. Goals and non-goals
 
-### Goals
+### Primary objective
+**G0: cut the total cost of managing and transforming security data.** This
+is the main use case, and it decides priority wherever goals compete. The cost
+covers:
+
+- SIEM/analytics **ingest and license** costs (usually the largest line item)
+- **storage** and retention costs across hot, warm and archive tiers
+- **transformation compute**: parsing, normalization, enrichment and routing
+- **engineering labor**: onboarding sources, maintaining parsers, fixing
+  drift, writing and tuning detections
+- **commercial pipeline-tool licenses** (Cribl, BindPlane, Databahn and similar),
+  which OSDF replaces with open source
+
+Target: **≥ 40% lower total cost** versus the measured baseline for the
+pilot's data sources, with no loss of detection coverage (see §9). Every other
+goal must either support this objective or at least not raise cost.
+
+### Supporting goals
 1. **G1, Own the pipeline.** Any source to any destination, with filtering,
    reduction, enrichment, masking and normalization done before data reaches
    expensive storage.
@@ -267,6 +289,25 @@ Priority: **P0** = MVP (walking skeleton plus first useful release), **P1** =
 v1.0, **P2** = later. Each requirement has an ID, so the architecture and
 the tests can trace back to it.
 
+### 5.0 Cost management and reduction (`cost`) — primary use case
+
+| ID | Requirement | Pri |
+|---|---|---|
+| FR-CST-01 | **Rate card**: configurable unit costs per destination and tier ($/GB ingested into each SIEM, or workload/compute-unit pricing; $/GB-month for hot, warm and archive storage; $/vCPU-hour for pipeline compute; $/1M tokens for LLMs) | P0 |
+| FR-CST-02 | **Metering**: bytes and events in and out measured at every stage (source, route, each function, destination). Stored in a `cost_ledger`, attributed to tenant, source, route, pipeline version and destination | P0 |
+| FR-CST-03 | **Baseline capture**: record what each source would cost if sent raw to the current SIEM (a pass-through shadow measurement) before any reduction is applied, so that savings are measured, not estimated | P0 |
+| FR-CST-04 | **Savings report**: per source, route and destination: baseline cost vs actual cost, GB/day saved, $ saved per month, trend. Exportable (CSV/JSON) for finance | P0 |
+| FR-CST-05 | **Reduction function library** with documented typical savings: drop null/empty/default fields, drop redundant raw fields after parsing, deduplicate repeated events, suppress chatty event IDs, aggregate to metrics (logs → counters), sample low-value events, truncate oversized fields, compact field names for the SIEM output, filter by allow/deny lists | P0 |
+| FR-CST-06 | **Tiered routing policies**: classify each source/event type as *detect-critical* (SIEM + lake), *investigate* (lake only, searchable), *compliance* (archive only, compressed) or *drop*. Policies are declared per route and enforced in the pipeline | P0 |
+| FR-CST-07 | **Detection-safety guard**: a reduction change is blocked if it removes an event type or field that a production detection, saved search or dashboard requires (uses `field_usage` + rule `requires`) | P0 |
+| FR-CST-08 | **What-if simulation**: before deploy, run a proposed pipeline on a recent sample (for example, 24 h from the lake) and report projected GB/day, $/month and detection impact | P0 |
+| FR-CST-09 | **Budgets and alerts**: per source/destination daily volume and cost budgets, with alerts on overrun and on sudden growth (a cost anomaly) | P1 |
+| FR-CST-10 | **Chargeback/showback** per tenant, business unit or data owner | P2 |
+| FR-CST-11 | **Search in the lake instead of rehydration**: investigations run on lake data in place (Trino), and selective replay sends only the matching slice to the SIEM, never whole time ranges | P1 |
+| FR-CST-12 | **Platform cost visibility**: OSDF's own infrastructure cost (compute, Kafka, ClickHouse, object storage, LLM tokens) is shown next to the savings, so net savings are reported honestly | P1 |
+| FR-CST-13 | **Labor-cost metrics**: time to onboard a source, time to fix drift, and detection authoring time, measured from proposal timestamps and compared against the pre-OSDF baseline | P1 |
+| FR-CST-14 | **Cost-efficient storage formats**: Parquet with ZSTD, partition and sort settings tuned for compression, and automatic compaction. Ratios are reported per table | P0 |
+
 ### 5.1 Collection (`collect`)
 
 | ID | Requirement | Pri |
@@ -376,7 +417,7 @@ results with each proposal.
 | ID | Agent | Requirement | Pri |
 |---|---|---|---|
 | FR-AGT-01 | **Onboarding agent** | Given sample logs or a source endpoint: identify the format and product, generate a parser (VRL), an OCSF mapping, test fixtures and a route, run them in test mode, and open a PR with a pass/fail and coverage report | P0 |
-| FR-AGT-02 | **Pipeline optimization agent** | Analyze per-field usage (which fields detections and searches actually read) and propose reduction (drop fields, sample, aggregate, route low-value data to the lake only) with an estimated GB/day saving and any detection impact | P1 |
+| FR-AGT-02 | **Cost optimization agent** (the first agent to build, because it serves the primary use case) | Find the most expensive sources and routes in the `cost_ledger`. Analyze which fields and event types detections, searches and dashboards actually read. Propose reductions (drop fields, dedup, sample, aggregate to metrics, re-tier to lake-only) as a PR that includes the what-if simulation (FR-CST-08), $/month saved and the detection-safety check (FR-CST-07) | P0 |
 | FR-AGT-03 | **Drift remediation agent** | When drift is detected, diff the samples, propose a parser/mapping patch, re-run tests, and open a PR | P1 |
 | FR-AGT-04 | **Detection engineering agent** | Given CTI (URL, report or STIX) or a technique ID: extract TTPs, check coverage, draft Sigma rules with tests, compile them to the target backends, backtest on lake data (hit count and sample), and open a PR | P0 (basic), P1 (backtest) |
 | FR-AGT-05 | **Tuning agent** | Use triage outcomes to find noisy rules, propose exceptions or logic changes, and show the backtest before and after | P1 |
@@ -393,7 +434,7 @@ results with each proposal.
 | ID | Requirement | Pri |
 |---|---|---|
 | FR-API-01 | Every platform capability is reachable through a versioned REST/gRPC API (OpenAPI spec) | P0 |
-| FR-API-02 | An **MCP server** exposes platform tools: `search`, `get_alert`, `list_sources`, `get_source_health`, `get_schema`, `test_pipeline`, `compile_rule`, `backtest_rule`, `coverage_for_technique`, `propose_change`, and others | P0 |
+| FR-API-02 | An **MCP server** exposes platform tools: `search`, `get_alert`, `list_sources`, `get_source_health`, `get_schema`, `test_pipeline`, `compile_rule`, `backtest_rule`, `coverage_for_technique`, `cost_report`, `simulate_pipeline`, `cost_check`, `propose_change`, and others | P0 |
 | FR-API-03 | MCP client support, so agents can call external MCP servers (ticketing, TI, cloud) through an allowlist | P1 |
 | FR-API-04 | A CLI (`osdf`) for GitOps workflows: validate, test, compile, deploy, replay | P0 |
 | FR-API-05 | Webhook and Kafka outputs for alerts to SOAR and case management (DFIR-IRIS, Shuffle, Jira, ServiceNow) | P0 webhook, P1 others |
@@ -437,6 +478,10 @@ results with each proposal.
 | NFR-OPS-04 | GitOps | All config (pipelines, routes, detections, packs, blueprints) lives in Git. The UI is a Git client. Drift between Git and runtime is detected |
 | NFR-LIC-01 | Licensing | Runtime dependencies use OSI-approved licenses (Apache-2.0, MIT, BSD, MPL-2.0, LGPL, AGPL/GPL acceptable for separate services). No source-available or BSL/SSPL components on the default path. OSDF code itself is Apache-2.0 |
 | NFR-COST-01 | Efficiency | Cost/GB targets: lake storage ≤ object storage cost plus about 10% compute overhead. Documented sizing guide |
+| NFR-COST-02 | Transformation efficiency | Pipeline compute ≤ 1 vCPU per 5k EPS for parse + OCSF map + 2 destinations (sustained). Measured and published per pack |
+| NFR-COST-03 | No LLM in the per-event path | LLMs run only at design time (generating parsers, rules and reductions) and per alert or question, never per event. Runtime transformation is deterministic VRL/OTTL. This keeps transformation cost linear in CPU and not in tokens |
+| NFR-COST-04 | LLM spend control | Per-agent and per-tenant token budgets, caching, smaller or local models for routine steps. Agent cost is reported in the cost ledger (FR-CST-12) |
+| NFR-COST-05 | Right-sized footprint | A single-node appliance runs ≤ 50 GB/day on ≤ 16 vCPU / 64 GB RAM. Optional components (Trino, Temporal, Flink) can be disabled for small installs |
 
 ---
 
@@ -479,6 +524,11 @@ The MVP is done when, on one machine with `docker compose up`:
    accuracy per agent.
 9. Grafana shows source health (silent-source alert), volume in/out
    (reduction %) and pipeline errors.
+10. **Cost reduction is measurable end to end:** a rate card is configured; the
+    cost ledger records baseline and actual bytes per source/route/destination;
+    a **savings dashboard** shows GB/day and $/month saved; and the **cost
+    optimization agent** opens at least one reduction PR with a what-if
+    simulation and a passing detection-safety check.
 
 ## 9. Success metrics
 
@@ -486,13 +536,26 @@ The MVP is done when, on one machine with `docker compose up`:
 |---|---|---|
 | Time to onboard a new standard log source | < 1 hour with the agent | < 15 min |
 | Agent-generated parser passes tests on first PR | ≥ 60% | ≥ 85% |
+| **Total cost of security data management vs baseline** (SIEM ingest + storage + pipeline compute + pipeline licenses + OSDF's own infra) | ≥ 25% lower on pilot sources | **≥ 40% lower** |
 | SIEM-bound volume reduction on reference dataset | ≥ 30% | ≥ 50% |
+| Detection coverage lost because of reduction | 0 techniques | 0 techniques |
+| Storage compression ratio (raw text → Parquet/ZSTD) | ≥ 8× | ≥ 12× |
+| Pipeline compute cost per TB processed | Measured and published | ≤ commercial-tool equivalent infra cost |
+| Engineer hours per new source onboarded | ≤ 50% of baseline | ≤ 20% of baseline |
+| Savings attributable to a specific source/route | 100% | 100% |
 | Triage agent precision on labeled benign alerts (auto-close candidates) | ≥ 90% | ≥ 97% |
 | False-negative rate of triage on labeled malicious alerts | ≤ 5% | ≤ 1% |
 | NL→SQL execution accuracy on eval set | ≥ 70% | ≥ 90% |
 | Detection rules with passing tests | 100% | 100% |
 
 ## 10. Open questions
+
+0. **What is the cost baseline?** We need the SIEM pricing model (ingest $/GB,
+   workload/compute units, or an enterprise flat license), current GB/day per
+   source, retention requirements (compliance), and the current pipeline tool
+   license cost. The pricing model decides which levers matter most. Under
+   ingest pricing, volume reduction dominates. Under workload pricing, moving
+   searches and detections to the lake matters more.
 
 1. Is multi-tenancy (MSSP) a v1 requirement or v2? It affects table layout
    and RBAC from day one.

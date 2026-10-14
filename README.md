@@ -12,6 +12,17 @@ that offers the core capabilities of four commercial products:
 | **Databahn** (Smart Edge, Highway, Cruz, Reef) | A "security data fabric" with AI-assisted data engineering | Agentless collection, schema-drift handling, AI-built parsers and OCSF/ECS mapping, PII masking, a context/graph layer that AI can query |
 | **Anvilogic** (AgenticSecOps platform, Armory, Monte Copilot) | An agentic detection engineering and triage layer over existing SIEMs and data lakes | Detection-as-code decoupled from storage, rules compiled to many query languages, MITRE ATT&CK coverage, federated search, onboard/search/detect/investigate agents, blueprints that chain agents |
 
+## Primary use case
+
+**Cut the total cost of managing and transforming security data**: SIEM
+ingest and license fees, storage, transformation compute, commercial
+pipeline-tool licenses, and the engineering hours spent onboarding and
+maintaining sources. The target is ≥ 40% lower net cost against a measured
+baseline, with no loss of detection coverage. This is requirement G0 in
+`requirements.md`. Cost metering is designed in from the first phase
+(architecture §5.7), and the plan delivers measurable savings at milestone M3,
+before the detection and agent work.
+
 ## Documents
 
 1. [`requirements.md`](requirements.md): competitive capability analysis, then
