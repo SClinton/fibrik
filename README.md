@@ -87,7 +87,7 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Design reviews, real-world use cases
 and connector proposals are especially welcome. Licensed under
-[Apache-2.0](LICENSE).
+[Apache-2.0](LICENSE). Copyright 2026 SCVenturesCo, Ltd. (see [`NOTICE`](NOTICE)).
 
 ## Research caveats
 
