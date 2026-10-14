@@ -18,7 +18,8 @@ Never put secret values in this file. Record only *where* a credential is kept.
 | Account | Purpose | Plan | Created | Created by | Billing card on file | Status |
 |---|---|---|---|---|---|---|
 | GitHub account `SClinton` | Source, issues, Actions, GHCR (`ghcr.io/sclinton/*`), Pages (`sclinton.github.io/fibrik`) | GitHub Free (public repos) | Existing | SClinton | | Active |
-| Oracle Cloud tenancy | Primary MVP host (Ampere A1 + k3s) | **Free Tier only, never upgraded** | | | Yes (verification only) | Not created |
+| GitHub Codespaces (`SClinton`) | Development host: kind via Docker-in-Docker (ADR-24) | Free monthly quota (verify: 120 core-hours, 15 GB-month storage), spending limit $0 | 2026-10-14 | SClinton | No | Active |
+| Oracle Cloud tenancy | Always-on host (Ampere A1 + k3s), deferred | **Free Tier only, never upgraded** | | | Yes (verification only) | Blocked: signup flagged as a possible duplicate account; Oracle review pending |
 | Google AI Studio / Gemini API | First LLM provider (synthetic data only) | Free tier, **no billing account linked** | | | No | Not created |
 | Google Cloud (storage test source) | GCS ingestion tests | Always Free | | | | Later (weeks 4–7) |
 | AWS (storage test source) | S3 ingestion tests | Free plan, closes at 6 months | | | | Later (weeks 4–7) |
@@ -47,6 +48,7 @@ Check each row against the provider's page at sign-up and fill in the
 | OCI | Object storage (S3-compatible API) | Free allowance, size to confirm | | | same |
 | OCI | Outbound data transfer | Free allowance, size to confirm | | | same |
 | OCI | Idle reclamation rule | < 20% CPU, network and memory at p95 over 7 days | | | same |
+| GitHub | Codespaces core-hours and storage (personal account) | 120 core-hours, 15 GB-month | | | https://docs.github.com/en/billing/managing-billing-for-your-products/managing-billing-for-github-codespaces/about-billing-for-github-codespaces |
 | Gemini API | Flash requests per minute / per day | Free tier, limits to confirm | | | https://ai.google.dev/gemini-api/docs/rate-limits |
 | Gemini API | Flash-Lite requests per minute / per day | Free tier, limits to confirm | | | same |
 | Gemini API | Data use on free tier | May be used to improve Google products: **synthetic data only** | | | https://ai.google.dev/gemini-api/terms |

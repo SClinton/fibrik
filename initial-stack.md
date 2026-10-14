@@ -156,3 +156,11 @@ sign-in via Dex/GitHub. Total spend $0.00.
   Cloud- or vendor-specific services are allowed only as ingestion sources or
   optional add-ons. Consequence: Caddy + Dex replace Cloudflare Tunnel/Access/Pages
   in the core, and k3d replaces Compose for local development.
+- **ADR-24: GitHub Codespaces as the development host while OCI is blocked.**
+  The OCI Always Free signup was flagged as a possible duplicate account, so
+  there is no always-on VM yet. Development and the week-1 checks run in a
+  Codespace (`.devcontainer/`, kind via Docker-in-Docker, amd64), within the
+  free quota and a $0 spending limit. The Mac mini (k3d) keeps the arm64
+  check. The always-on k3s target (§8, day 4) moves to OCI once the account
+  is cleared, or to an AWS free-plan Graviton VM when a demo needs one.
+  Consequence: no chart or code changes; only the day-4 host differs.

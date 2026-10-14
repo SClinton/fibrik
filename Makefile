@@ -60,6 +60,10 @@ help: ## Show this help
 
 .PHONY: tools
 tools: $(HELM) $(KIND) $(KUBECTL) ## Install pinned helm, kind and kubectl into ./.bin
+	@# Unversioned names for interactive use (the devcontainer puts .bin on PATH).
+	@ln -sf $(notdir $(HELM)) $(BIN)/helm
+	@ln -sf $(notdir $(KIND)) $(BIN)/kind
+	@ln -sf $(notdir $(KUBECTL)) $(BIN)/kubectl
 
 # ---- Chart checks (no cluster needed) -------------------------------------
 
