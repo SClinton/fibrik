@@ -20,7 +20,7 @@ Never put secret values in this file. Record only *where* a credential is kept.
 | GitHub account `SClinton` | Source, issues, Actions, GHCR (`ghcr.io/sclinton/*`), Pages (`sclinton.github.io/fibrik`) | GitHub Free (public repos) | Existing | SClinton | | Active |
 | GitHub Codespaces (`SClinton`) | Development host: kind via Docker-in-Docker (ADR-24) | Free monthly quota (verify: 120 core-hours, 15 GB-month storage), spending limit $0 | 2026-10-14 | SClinton | No | Active |
 | Oracle Cloud tenancy | Always-on host (Ampere A1 + k3s), deferred | **Free Tier only, never upgraded** | | | Yes (verification only) | Blocked: signup flagged as a possible duplicate account; Oracle review pending |
-| Google AI Studio / Gemini API | First LLM provider (synthetic data only) | Free tier, **no billing account linked** | | | No | Not created |
+| Google AI Studio / Gemini API | First LLM provider (synthetic data only) | Free tier, **no billing account linked** | 2026-10-14 | SClinton | No | Active |
 | Google Cloud (storage test source) | GCS ingestion tests | Always Free | | | | Later (weeks 4–7) |
 | AWS (storage test source) | S3 ingestion tests | Free plan, closes at 6 months | | | | Later (weeks 4–7) |
 | Azure (storage test source) | Blob ingestion tests | Free account | | | | Later (weeks 4–7) |
@@ -71,7 +71,7 @@ account with no payment method can't be billed; record that instead.
 
 | Credential | Used by | Stored in | Rotation | Created on |
 |---|---|---|---|---|
-| Gemini API key | LiteLLM in `fibrik-api` (later) | Password manager now; SOPS + age in Git once the chart needs it | Every 90 days or on exposure | |
+| Gemini API key | LiteLLM in `fibrik-api` (day 3) | Password manager + Codespaces user secret `GEMINI_API_KEY` (repo `SClinton/fibrik` only); SOPS + age in Git once the chart needs it | Every 90 days or on exposure. First key was pasted into a chat session on 2026-10-14: rotate it | 2026-10-14 |
 | OCI API signing key (for OpenTofu) | `deploy/tofu/oci` (day 4) | Password manager / local `~/.oci`, never in Git | On maintainer change | |
 
 ## 5. Review log
