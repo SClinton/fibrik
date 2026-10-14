@@ -4,7 +4,9 @@ import logging
 
 import httpx
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError
+from pyiceberg.io import FileIO
 from pyiceberg.table import Table
 
 from fibrik.lake.schema import ICEBERG_SCHEMA, PARTITION_SPEC, RAW_LOGS
@@ -28,6 +30,45 @@ def _io_properties(s: Settings) -> dict[str, str]:
         props["s3.access-key-id"] = st.access_key_id
         props["s3.secret-access-key"] = st.secret_access_key
     return props
+
+
+# Table-config keys a REST catalog may send to choose how clients reach
+# storage (remote signing, vended credentials). Fibrik ignores them.
+_SERVER_IO_KEYS = (
+    "py-io-impl",
+    "s3.remote-signing-enabled",
+    "s3.signer",
+    "s3.access-key-id",
+    "s3.secret-access-key",
+    "s3.session-token",
+    "s3.endpoint",
+    "s3.region",
+)
+
+
+def own_io_properties(server: dict[str, str], own: dict[str, str]) -> dict[str, str]:
+    """Merge table config from the catalog with Fibrik's storage profile, ours winning."""
+    kept = {k: v for k, v in server.items() if not k.startswith(_SERVER_IO_KEYS)}
+    return kept | own
+
+
+class FibrikRestCatalog(RestCatalog):
+    """REST catalog whose tables always use Fibrik's own storage credentials.
+
+    Lakekeeper answers with remote-signing settings when it cannot vend
+    credentials (R2 and SeaweedFS have no STS). Fibrik already holds S3
+    credentials through the storage profile, so data files are read and
+    written directly with PyArrow instead.
+    """
+
+    def __init__(self, name: str, own_io: dict[str, str], **properties: str):
+        self._own_io = own_io
+        super().__init__(name, **properties)
+
+    def _load_file_io(self, properties=None, location: str | None = None) -> FileIO:
+        props = own_io_properties(dict(properties or {}), self._own_io)
+        props["py-io-impl"] = "pyiceberg.io.pyarrow.PyArrowFileIO"
+        return super()._load_file_io(props, location)
 
 
 def ensure_warehouse(s: Settings) -> None:
@@ -73,12 +114,11 @@ def get_catalog(s: Settings, **extra: str) -> Catalog:
     if s.catalog_type == "sql":
         props = {"uri": s.catalog_uri, "warehouse": f"s3://{s.storage.bucket}/lake"}
         return load_catalog("fibrik", type="sql", **(props | _io_properties(s) | extra))
-    return load_catalog(
+    return FibrikRestCatalog(
         "fibrik",
-        type="rest",
+        own_io=_io_properties(s),
         uri=s.catalog_uri,
         warehouse=s.warehouse,
-        **_io_properties(s),
         **extra,
     )
 
