@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     lake_writer_enabled: bool = True
     lake_writer_interval_seconds: float = 10.0
 
+    # OIDC (Dex). The API accepts bearer tokens issued for the UI client.
+    auth_enabled: bool = True
+    oidc_issuer: str = "http://localhost:8080/dex"
+    oidc_audience: str = "fibrik-ui"
+    # In-cluster URL of the issuer's signing keys (the public issuer URL is
+    # often not reachable from inside the cluster).
+    oidc_jwks_url: str = "http://localhost:5556/dex/keys"
+
     storage: StorageSettings = Field(default_factory=StorageSettings)
 
 

@@ -13,6 +13,10 @@ spec:
     - name: http
       port: 8000
       targetPort: http
+    # Probes and operational checks; Caddy does not route here.
+    - name: internal
+      port: 8001
+      targetPort: internal
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -54,15 +58,17 @@ spec:
           ports:
             - name: http
               containerPort: 8000
+            - name: internal
+              containerPort: 8001
           readinessProbe:
             httpGet:
               path: /readyz
-              port: http
+              port: internal
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: internal
             initialDelaySeconds: 15
             periodSeconds: 15
           resources:

@@ -1,16 +1,21 @@
-"""fibrik-api: health, info and pipeline stats. Runs the lake writer in-process.
+"""fibrik-api: the control-plane API, plus the in-process lake writer.
 
-The lean profile runs API, MCP servers and background jobs as one process
-group (zero-cost-mvp.md §3); they split into separate deployments later.
+Two listeners: the public API (port 8000, behind Caddy at /api, bearer
+tokens required) and an internal one (port 8001, cluster-only) for probes
+and operational checks. The lean profile runs API, MCP servers and
+background jobs as one process group (zero-cost-mvp.md §3).
 """
 
+import asyncio
 import logging
 import threading
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI, Response
 
 from fibrik import __version__, clickhouse
+from fibrik.api.auth import TokenVerifier, User
 from fibrik.lake.catalog import get_catalog
 from fibrik.lake.schema import RAW_LOGS
 from fibrik.lake.writer import LakeWriter
@@ -28,7 +33,42 @@ def lake_row_count(s: Settings) -> int:
     return int(snap.summary.additional_properties.get("total-records", 0))
 
 
+def pipeline_stats(s: Settings) -> dict:
+    """Rows in the hot store and the lake: the week-1 end-to-end check."""
+    return {
+        "clickhouse": {"raw_logs": clickhouse.raw_log_count(s)},
+        "lake": {"raw_logs": lake_row_count(s)},
+    }
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
+    """The public API."""
+    s = settings or get_settings()
+    app = FastAPI(title="Fibrik API", version=__version__, root_path="/api")
+    app.state.verifier = TokenVerifier(s) if s.auth_enabled else None
+
+    @app.get("/healthz")
+    def healthz() -> dict:
+        return {"status": "ok"}
+
+    @app.get("/v1/info")
+    def info() -> dict:
+        return {"name": "fibrik", "version": __version__}
+
+    @app.get("/v1/me")
+    def me(user: User) -> dict:
+        keys = ("sub", "email", "name", "preferred_username")
+        return {k: user[k] for k in keys if k in user}
+
+    @app.get("/v1/pipeline/stats")
+    def stats(user: User) -> dict:
+        return pipeline_stats(s)
+
+    return app
+
+
+def create_internal_app(settings: Settings | None = None) -> FastAPI:
+    """Cluster-only endpoints: probes, stats for e2e tests, and the lake writer."""
     s = settings or get_settings()
 
     @asynccontextmanager
@@ -47,7 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         stop.set()
 
-    app = FastAPI(title="Fibrik API", version=__version__, lifespan=lifespan, root_path="/api")
+    app = FastAPI(title="Fibrik internal", version=__version__, lifespan=lifespan)
 
     @app.get("/healthz")
     def healthz() -> dict:
@@ -62,16 +102,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {"status": "unavailable", "clickhouse": str(e)}
         return {"status": "ready"}
 
-    @app.get("/v1/info")
-    def info() -> dict:
-        return {"name": "fibrik", "version": __version__}
-
     @app.get("/v1/pipeline/stats")
     def stats() -> dict:
-        """Rows in the hot store and the lake: the week-1 end-to-end check."""
-        return {
-            "clickhouse": {"raw_logs": clickhouse.raw_log_count(s)},
-            "lake": {"raw_logs": lake_row_count(s)},
-        }
+        return pipeline_stats(s)
 
     return app
+
+
+def serve(host: str, port: int, internal_port: int) -> None:
+    s = get_settings()
+    servers = [
+        uvicorn.Server(uvicorn.Config(create_app(s), host=host, port=port)),
+        uvicorn.Server(uvicorn.Config(create_internal_app(s), host=host, port=internal_port)),
+    ]
+
+    async def main() -> None:
+        await asyncio.gather(*(srv.serve() for srv in servers))
+
+    asyncio.run(main())

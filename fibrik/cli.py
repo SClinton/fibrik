@@ -4,7 +4,6 @@ import logging
 import time
 
 import typer
-import uvicorn
 
 from fibrik import clickhouse
 from fibrik.lake.catalog import ensure_table, ensure_warehouse, get_catalog
@@ -48,9 +47,11 @@ def migrate(timeout: float = typer.Option(300, help="Seconds to wait for depende
 
 
 @app.command()
-def serve(host: str = "0.0.0.0", port: int = 8000) -> None:
-    """Run the API server (and the in-process lake writer)."""
-    uvicorn.run("fibrik.api.app:create_app", factory=True, host=host, port=port)
+def serve(host: str = "0.0.0.0", port: int = 8000, internal_port: int = 8001) -> None:
+    """Run the public API, the internal API and the in-process lake writer."""
+    from fibrik.api.app import serve as run
+
+    run(host, port, internal_port)
 
 
 if __name__ == "__main__":

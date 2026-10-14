@@ -35,11 +35,13 @@ IMAGE_REGISTRY ?= ghcr.io/sclinton
 # `dev` for local and CI builds; CI publishes the commit SHA on main.
 IMAGE_TAG      ?= dev
 PLATFORMS      ?= linux/amd64,linux/arm64
-IMAGES         := fibrik-api fibrik-otelcol
+IMAGES         := fibrik-api fibrik-otelcol fibrik-ui
 CONTEXT_fibrik-api     := .
 DOCKERFILE_fibrik-api  := build/fibrik-api.Dockerfile
 CONTEXT_fibrik-otelcol    := cmd/fibrik-otelcol
 DOCKERFILE_fibrik-otelcol := cmd/fibrik-otelcol/Dockerfile
+CONTEXT_fibrik-ui      := ui
+DOCKERFILE_fibrik-ui   := ui/Dockerfile
 
 # ---- Python ----------------------------------------------------------------
 PYTHON ?= python3
@@ -169,6 +171,20 @@ tofu-validate: $(TOFU) ## Format-check and validate the OpenTofu modules (no clo
 	  $(TOFU) -chdir=$$m validate; \
 	done
 
+DOCS_VENV := $(CURDIR)/.venv-docs
+
+.PHONY: docs
+docs: ## Build the project site into .site (MkDocs Material)
+	@test -x $(DOCS_VENV)/bin/mkdocs || { $(PYTHON) -m venv $(DOCS_VENV) && $(DOCS_VENV)/bin/pip install --quiet "mkdocs-material==9.7.7"; }
+	rm -rf .site-src && mkdir -p .site-src
+	cp README.md .site-src/index.md
+	cp requirements.md architecture.md mvp-scope.md execution-plan.md initial-stack.md \
+	   connectors-framework.md zero-cost-mvp.md ai-data-optimization.md \
+	   saas-byoc-and-compute-offload.md CONTRIBUTING.md docs/*.md .site-src/
+	@# Pages under docs/ link to the specs with ../; on the site they are siblings.
+	sed -i.bak 's#](\.\./#](#g' $(addprefix .site-src/,$(notdir $(wildcard docs/*.md))) && rm -f .site-src/*.bak
+	$(DOCS_VENV)/bin/mkdocs build
+
 .PHONY: template
 template: $(HELM) ## Render the chart for PROFILE to stdout
 	@$(HELM) template $(RELEASE) $(CHART) -n $(NAMESPACE) -f $(CHART)/values-$(PROFILE).yaml
@@ -228,6 +244,29 @@ test: $(HELM) ## Run the chart's smoke tests (helm test)
 e2e: $(KUBECTL) ## Send syslog lines and wait until they reach ClickHouse and Iceberg
 	KUBECTL=$(KUBECTL) NAMESPACE=$(NAMESPACE) RELEASE=$(RELEASE) hack/e2e.sh
 
+# UI_URL must match global.publicUrl (the Dex issuer is derived from it).
+UI_URL ?= http://localhost:8080
+# 1 = reach Caddy with kubectl port-forward (kind); 0 = already exposed (k3d).
+PORT_FORWARD ?= 1
+
+.PHONY: ui-dev
+ui-dev: ## Install UI dependencies (npm ci)
+	cd ui && npm ci --no-audit --no-fund
+
+.PHONY: ui-check
+ui-check: ui-dev ## Type-check and build the UI
+	cd ui && npm run build
+
+.PHONY: e2e-ui
+e2e-ui: $(KUBECTL) ui-dev ## Browser test: sign in through Dex and see pipeline stats (Playwright)
+	cd ui && npx playwright install --with-deps chromium
+	@set -e; \
+	if [ "$(PORT_FORWARD)" = 1 ]; then \
+	  $(KUBECTL) -n $(NAMESPACE) port-forward svc/$(RELEASE)-caddy 8080:80 >/dev/null 2>&1 & pf=$$!; \
+	  trap "kill $$pf" EXIT; sleep 3; \
+	fi; \
+	cd ui && FIBRIK_URL=$(UI_URL) npx playwright test
+
 .PHONY: diag
 diag: $(KUBECTL) ## Print pods, events and recent logs (for failed runs)
 	-$(KUBECTL) get pods,pvc,svc -n $(NAMESPACE) -o wide
@@ -254,6 +293,7 @@ endef
 images: ## Build Fibrik images for this machine's platform (tag IMAGE_TAG)
 	$(call build_image,fibrik-api)
 	$(call build_image,fibrik-otelcol)
+	$(call build_image,fibrik-ui)
 
 .PHONY: registry-login
 registry-login: ## Log in to IMAGE_REGISTRY with REGISTRY_USER / REGISTRY_PASSWORD from the environment
@@ -266,6 +306,7 @@ images-push: $(COSIGN) ## Build multi-arch images, push them to IMAGE_REGISTRY a
 	docker buildx inspect fibrik >/dev/null 2>&1 || docker buildx create --name fibrik
 	$(call push_image,fibrik-api)
 	$(call push_image,fibrik-otelcol)
+	$(call push_image,fibrik-ui)
 
 # ---- CI entry points -------------------------------------------------------
 
@@ -280,10 +321,13 @@ gitops: $(FLUX) $(KUBECTL) ## Install Flux and point it at this repo (CLUSTER=lo
 CLUSTER ?= local
 
 .PHONY: ci-k3d
-ci-k3d: images k3d-up k3d-load deploy test e2e ## CI: same as ci-kind, on k3d (k3s)
+ci-k3d: images k3d-up k3d-load ## CI: same as ci-kind, on k3d (k3s), with Caddy behind k3s ServiceLB
+	$(MAKE) deploy EXTRA_ARGS="--set caddy.service.type=LoadBalancer"
+	$(MAKE) test e2e
+	$(MAKE) e2e-ui PORT_FORWARD=0
 
 .PHONY: ci-kind
-ci-kind: images kind-up kind-load deploy test e2e ## CI: build images, deploy PROFILE=ci to kind, run smoke and e2e tests
+ci-kind: images kind-up kind-load deploy test e2e e2e-ui ## CI: build images, deploy PROFILE=ci to kind, run smoke, e2e and browser tests
 
 .PHONY: clean
 clean: ## Remove downloaded tools

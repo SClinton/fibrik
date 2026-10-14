@@ -14,7 +14,7 @@ CURL_IMAGE=${CURL_IMAGE:-curlimages/curl:8.23.0}
 NC_IMAGE=${NC_IMAGE:-busybox:1.38.0}
 
 k() { "$KUBECTL" -n "$NAMESPACE" "$@"; }
-api="http://$RELEASE-api:8000/v1/pipeline/stats"
+api="http://$RELEASE-api:8001/v1/pipeline/stats"
 otel="$RELEASE-otelcol"
 
 run_pod() {  # run_pod NAME IMAGE SCRIPT

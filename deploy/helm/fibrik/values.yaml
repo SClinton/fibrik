@@ -172,9 +172,7 @@ dex:
 
 caddy:
   enabled: true
-  image:
-    repository: caddy
-    tag: "2.11.7"
+  # The image is fibrik-ui (caddy:2.11.7 plus the UI build; ui/Dockerfile).
   # Hostname for automatic HTTPS (Let's Encrypt). Empty serves plain HTTP on
   # port 80, which is what kind and k3d use.
   domain: ""

@@ -157,6 +157,14 @@ every template in one render sees the same values.
   value: http://{{ $lk }}:8181/catalog
 - name: FIBRIK_CATALOG_MANAGEMENT_URI
   value: http://{{ $lk }}:8181/management
+- name: FIBRIK_AUTH_ENABLED
+  value: {{ .Values.dex.enabled | quote }}
+- name: FIBRIK_OIDC_ISSUER
+  value: {{ printf "%s/dex" .Values.global.publicUrl | quote }}
+- name: FIBRIK_OIDC_AUDIENCE
+  value: {{ .Values.dex.clientId | quote }}
+- name: FIBRIK_OIDC_JWKS_URL
+  value: http://{{ include "fibrik.component" (list . "dex") }}:5556/dex/keys
 - name: FIBRIK_LAKE_WRITER_INTERVAL_SECONDS
   value: {{ .Values.api.lakeWriterIntervalSeconds | quote }}
 - name: FIBRIK_STORAGE_TYPE

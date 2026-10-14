@@ -38,9 +38,18 @@ data:
       }
       {{- end }}
 
-      # The UI build is served here from week 1, day 5.
+      # Runtime settings for the UI, so one build works on every host.
+      handle /config.json {
+        header Content-Type application/json
+        header Cache-Control no-store
+        respond `{{ dict "issuer" (printf "%s/dex" .Values.global.publicUrl) "clientId" .Values.dex.clientId | toJson }}` 200
+      }
+
+      # The UI: a static build inside the fibrik-ui image (Caddy + dist).
       handle {
-        respond "Fibrik is running." 200
+        root * /srv
+        try_files {path} /index.html
+        file_server
       }
     }
 
@@ -107,7 +116,9 @@ spec:
     spec:
       containers:
         - name: caddy
-          image: {{ include "fibrik.image" .Values.caddy.image }}
+          # fibrik-ui is the official Caddy image plus the UI build.
+          image: {{ include "fibrik.ownImage" (list . "fibrik-ui") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
           ports:
             - name: http
               containerPort: 80

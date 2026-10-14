@@ -25,6 +25,7 @@ jobs:
       - run: make ci-lint
       - run: make py-lint py-test
       - run: make tofu-validate
+      - run: make ui-check
 
   kind:
     # Portability proof, target 1 of 3 (initial-stack.md §8): same chart on kind (amd64).

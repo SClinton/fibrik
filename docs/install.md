@@ -17,7 +17,8 @@ downloaded into `./.bin` by `make` on first use, with checksum checks.
 ## 1. Build or pull the images
 
 CI publishes signed multi-arch images on every merge to `main`:
-`ghcr.io/sclinton/fibrik-api` and `ghcr.io/sclinton/fibrik-otelcol`, tagged
+`ghcr.io/sclinton/fibrik-api`, `ghcr.io/sclinton/fibrik-otelcol` and
+`ghcr.io/sclinton/fibrik-ui` (Caddy plus the UI build), tagged
 with the commit SHA and `latest`. The packages must be public for clusters
 to pull them without credentials: GitHub → your profile → Packages → each
 package → Package settings → Change visibility → Public.
@@ -40,7 +41,12 @@ make k3d-up                      # k3s in Docker, Traefik off, UI on localhost:8
 make images k3d-load             # or skip and use the published images (IMAGE_TAG=latest)
 make deploy                      # PROFILE=ci by default: small volumes, mock login
 make test e2e                    # smoke tests, then a syslog line through to Iceberg
+make e2e-ui PORT_FORWARD=0       # browser test: sign in through Dex, see pipeline stats
 ```
+
+`make ui-dev` installs the UI's dependencies; `cd ui && npm run dev` serves
+it with hot reload and proxies `/api`, `/dex` and `/config.json` to the
+deployment on port 8080.
 
 On the Mac mini, start Docker first with Colima. The default 2 GB VM is too
 small: `colima start --cpu 4 --memory 8`.
