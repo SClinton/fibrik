@@ -83,6 +83,12 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
    specific service per category, chosen for portability, with the
    portability proof matrix and a day-by-day plan for the first week.
 
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Design reviews, real-world use cases
+and connector proposals are especially welcome. Licensed under
+[Apache-2.0](LICENSE).
+
 ## Research caveats
 
 - The vendor research uses public material: product docs, release notes,
