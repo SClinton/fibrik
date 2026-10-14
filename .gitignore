@@ -1,2 +1,9 @@
 # Tools installed by `make tools`
 /.bin/
+
+# Python
+/.venv/
+__pycache__/
+*.egg-info/
+# OCB build output
+/cmd/fibrik-otelcol/_build/

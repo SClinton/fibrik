@@ -1,0 +1,70 @@
+{{- if .Values.api.enabled }}
+{{- $name := include "fibrik.component" (list . "api") }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "api") | nindent 4 }}
+spec:
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "api") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "api") | nindent 4 }}
+spec:
+  replicas: 1
+  # One lake writer at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "api") | nindent 8 }}
+    spec:
+      initContainers:
+        # Bucket, ClickHouse tables, Iceberg warehouse and tables. Idempotent,
+        # so `helm upgrade` is the only upgrade step.
+        - name: migrate
+          image: {{ include "fibrik.ownImage" (list . "fibrik-api") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          args: ["migrate"]
+          env:
+            {{- include "fibrik.apiEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+      containers:
+        - name: api
+          image: {{ include "fibrik.ownImage" (list . "fibrik-api") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          args: ["serve"]
+          env:
+            {{- include "fibrik.apiEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+{{- end }}

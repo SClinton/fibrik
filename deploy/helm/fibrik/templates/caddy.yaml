@@ -26,6 +26,12 @@ data:
         respond "ok" 200
       }
 
+      {{- if .Values.api.enabled }}
+      handle_path /api/* {
+        reverse_proxy {{ include "fibrik.component" (list . "api") }}:8000
+      }
+      {{- end }}
+
       {{- if .Values.dex.enabled }}
       handle /dex/* {
         reverse_proxy {{ include "fibrik.component" (list . "dex") }}:5556

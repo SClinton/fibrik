@@ -22,3 +22,9 @@ victoriametrics:
   persistence: { size: 1Gi }
 caddy:
   persistence: { size: 64Mi }
+seaweedfs:
+  persistence: { size: 2Gi }
+api:
+  # Commit to the lake quickly so the e2e test finishes fast.
+  lakeWriterIntervalSeconds: 3
+

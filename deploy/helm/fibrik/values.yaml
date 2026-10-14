@@ -17,9 +17,81 @@ global:
 # values once and keeps them on upgrade. For GitOps, create the Secret with
 # SOPS + age and name it here. It must hold these keys:
 #   postgres-password, lakekeeper-db-password, lakekeeper-encryption-key,
-#   dex-db-password, dex-client-secret, clickhouse-password
+#   dex-db-password, dex-client-secret, clickhouse-password,
+#   s3-access-key-id, s3-secret-access-key (used by the in-cluster SeaweedFS)
 credentials:
   existingSecret: ""
+
+# Fibrik's own images (built by `make images`, published by CI).
+images:
+  registry: ghcr.io/sclinton
+  # Empty uses the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# The storage profile (ADR: one description of the object store; every
+# component gets its native client settings from it). Only type s3 exists in
+# the MVP; it covers AWS S3, R2, OCI, Ceph, SeaweedFS and MinIO.
+storage:
+  type: s3
+  bucket: fibrik-lake
+  # Empty with seaweedfs.enabled points at the in-cluster SeaweedFS. Empty
+  # without it means AWS S3. Otherwise the store's S3 endpoint URL.
+  endpoint: ""
+  region: us-east-1
+  pathStyle: true
+  # Secret with access-key-id and secret-access-key for an external store.
+  # Ignored when seaweedfs.enabled (the chart generates those keys).
+  existingSecret: ""
+
+# In-cluster S3-compatible object store for kind, k3d and small installs.
+seaweedfs:
+  enabled: true
+  image:
+    repository: chrislusf/seaweedfs
+    tag: "4.48"
+  persistence:
+    size: 20Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# OpenTelemetry Collector gateway (fibrik-otelcol, an OCB build).
+otelcol:
+  enabled: true
+  # Accept RFC 5424 syslog over TCP (newline-framed).
+  syslog:
+    enabled: true
+    port: 5140
+  service:
+    type: ClusterIP
+  persistence:
+    # Persistent sending queue, so events survive a Vector restart.
+    size: 2Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 320Mi }
+
+# Vector: parse, normalize and route (writes ClickHouse and the lake landing zone).
+vector:
+  enabled: true
+  image:
+    repository: timberio/vector
+    tag: "0.59.0-distroless-libc"
+  persistence:
+    # Disk buffers for each sink (Vector needs at least 256 MiB per buffer).
+    size: 2Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# fibrik-api: control-plane API, migrations and the in-process lake writer.
+api:
+  enabled: true
+  lakeWriterIntervalSeconds: 10
+  resources:
+    requests: { cpu: 50m, memory: 192Mi }
+    limits: { memory: 768Mi }
 
 postgres:
   enabled: true
@@ -41,6 +113,8 @@ clickhouse:
     tag: "25.8.33.6"
   database: fibrik
   user: fibrik
+  # Days of searchable (hot) data before ClickHouse drops it.
+  hotTtlDays: 7
   # Server-wide memory cap (bytes). Keep it below the container limit.
   maxServerMemoryUsage: 2147483648
   markCacheSize: 268435456

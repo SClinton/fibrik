@@ -18,17 +18,18 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - run: make tools
       - run: make ci-lint
+      - run: make py-lint py-test
 
   kind:
     # Portability proof, target 1 of 3 (initial-stack.md §8): same chart on kind (amd64).
     needs: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - run: make tools
@@ -37,3 +38,21 @@ jobs:
         run: make diag
       - if: always()
         run: make kind-down
+
+  publish:
+    # Multi-arch images to GHCR, signed keyless with cosign (GitHub OIDC).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - run: make registry-login
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - run: make images-push IMAGE_TAG=${{ github.sha }}
