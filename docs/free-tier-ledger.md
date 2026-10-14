@@ -21,6 +21,7 @@ Never put secret values in this file. Record only *where* a credential is kept.
 | GitHub Codespaces (`SClinton`) | Development host: kind via Docker-in-Docker (ADR-24) | Free monthly quota (verify: 120 core-hours, 15 GB-month storage), spending limit $0 | 2026-10-14 | SClinton | No | Active |
 | Oracle Cloud tenancy | Always-on host (Ampere A1 + k3s), deferred | **Free Tier only, never upgraded** | | | Yes (verification only) | Blocked: signup flagged as a possible duplicate account; Oracle review pending |
 | Google AI Studio / Gemini API | First LLM provider (synthetic data only) | Free tier, **no billing account linked** | 2026-10-14 | SClinton | No | Active |
+| Cloudflare R2 | Prototype lake bucket `fibrik-lake-dev` (`values-poc.yaml`); synthetic data only | Free plan (verify: 10 GB storage, ~1M writes and ~10M reads a month, no egress fees); card on file | | | Yes | Not created |
 | Google Cloud (storage test source) | GCS ingestion tests | Always Free | | | | Later (weeks 4–7) |
 | AWS (storage test source) | S3 ingestion tests | Free plan, closes at 6 months | | | | Later (weeks 4–7) |
 | Azure (storage test source) | Blob ingestion tests | Free account | | | | Later (weeks 4–7) |
@@ -49,6 +50,7 @@ Check each row against the provider's page at sign-up and fill in the
 | OCI | Outbound data transfer | Free allowance, size to confirm | | | same |
 | OCI | Idle reclamation rule | < 20% CPU, network and memory at p95 over 7 days | | | same |
 | GitHub | Codespaces core-hours and storage (personal account) | 120 core-hours, 15 GB-month | | | https://docs.github.com/en/billing/managing-billing-for-your-products/managing-billing-for-github-codespaces/about-billing-for-github-codespaces |
+| Cloudflare R2 | Storage, operations, egress | 10 GB, ~1M Class A + ~10M Class B ops/month, $0 egress | | | https://developers.cloudflare.com/r2/pricing/ |
 | Gemini API | Flash requests per minute / per day | Free tier, limits to confirm | | | https://ai.google.dev/gemini-api/docs/rate-limits |
 | Gemini API | Flash-Lite requests per minute / per day | Free tier, limits to confirm | | | same |
 | Gemini API | Data use on free tier | May be used to improve Google products: **synthetic data only** | | | https://ai.google.dev/gemini-api/terms |
@@ -65,6 +67,7 @@ account with no payment method can't be billed; record that instead.
 |---|---|---|---|---|---|---|
 | Oracle Cloud | Budget on the root compartment | $1 / month | Actual 100%, forecast 100% | | | |
 | GitHub `SClinton` | Budgets for Actions, Packages, Codespaces | $0, "stop usage" on | Alert at 100% | | | |
+| Cloudflare | Usage-based billing notification | $1 | Any usage charge | | | |
 | Google (AI Studio project) | Not billable while no billing account is linked | — | — | — | | |
 
 ## 4. Credentials register
@@ -72,6 +75,8 @@ account with no payment method can't be billed; record that instead.
 | Credential | Used by | Stored in | Rotation | Created on |
 |---|---|---|---|---|
 | Gemini API key | LiteLLM in `fibrik-api` (day 3) | Password manager + Codespaces user secret `GEMINI_API_KEY` (repo `SClinton/fibrik` only); SOPS + age in Git once the chart needs it | Every 90 days or on exposure. First key was pasted into a chat session on 2026-10-14: rotate it | 2026-10-14 |
+| R2 API token (`fibrik-lake-dev`, Object Read & Write) | `fibrik-storage` Secret for `values-poc.yaml` | Password manager + Codespaces secrets `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Every 90 days or on exposure | |
+| GitHub OAuth app (Dex) | `fibrik-dex-github` Secret | Password manager + Codespaces secrets `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | On exposure | |
 | OCI API signing key (for OpenTofu) | `deploy/tofu/oci` (day 4) | Password manager / local `~/.oci`, never in Git | On maintainer change | |
 
 ## 5. Review log
