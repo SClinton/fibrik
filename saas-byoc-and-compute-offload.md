@@ -10,14 +10,14 @@
 
 This assessment covers two linked capabilities:
 
-1. **A SaaS-hosted version of OSDF** in which the customer hosts the core
+1. **A SaaS-hosted version of Fibrik** in which the customer hosts the core
    application in **their own cloud account** (AWS, Azure, Google Cloud,
    Oracle Cloud Infrastructure, or on-prem Kubernetes), while the service
    provider operates it as a managed service.
 2. **Compute offload.** The customer can push data processing (storage,
    transformation, detection, search, backtests) to a **data platform they
    already pay for**: Snowflake, Databricks, and later BigQuery, Microsoft
-   Fabric and others. OSDF's own engines then do only what those platforms
+   Fabric and others. Fibrik's own engines then do only what those platforms
    can't do well.
 
 Both capabilities serve the primary use case (cost reduction, requirements
@@ -33,11 +33,11 @@ backend through the same MCP tools.
 
 | Question | Assessment |
 |---|---|
-| Is the current architecture compatible? | **Mostly.** OSDF already separates the control plane from the data plane, uses open formats (Iceberg/Parquet, OCSF, Sigma) and runs on Kubernetes. The gaps are: (a) the control plane isn't multi-tenant or SaaS-operable yet; (b) storage is S3-API-only, while Azure needs native ADLS/Blob; (c) the Iceberg catalog is fixed (Lakekeeper); (d) execution is assumed to happen in ClickHouse/Trino/Vector; (e) Temporal and the agents assume one trust zone. |
+| Is the current architecture compatible? | **Mostly.** Fibrik already separates the control plane from the data plane, uses open formats (Iceberg/Parquet, OCSF, Sigma) and runs on Kubernetes. The gaps are: (a) the control plane isn't multi-tenant or SaaS-operable yet; (b) storage is S3-API-only, while Azure needs native ADLS/Blob; (c) the Iceberg catalog is fixed (Lakekeeper); (d) execution is assumed to happen in ClickHouse/Trino/Vector; (e) Temporal and the agents assume one trust zone. |
 | Recommended hosting model | **Managed BYOC**: a vendor-operated, multi-tenant **control plane (SaaS)**, and a **data plane deployed into the customer's cloud account**. The data plane connects outbound only, and **no customer event data crosses into the control plane**. Self-managed open source stays available, and fully hosted SaaS is a later option. |
-| Recommended offload model | An **open lake + pluggable execution backends**. Data lands once in Iceberg. Each workload (transform, detect, search, backtest, cost analysis) is then *placed* on an execution backend: OSDF-native, Snowflake, Databricks, or others. A **cost-aware placement engine** decides where, and agents use one tool surface regardless of backend. |
+| Recommended offload model | An **open lake + pluggable execution backends**. Data lands once in Iceberg. Each workload (transform, detect, search, backtest, cost analysis) is then *placed* on an execution backend: Fibrik-native, Snowflake, Databricks, or others. A **cost-aware placement engine** decides where, and agents use one tool surface regardless of backend. |
 | Cloud coverage | Tier 1: AWS, Azure, GCP. Tier 2: OCI. Tier 3: on-prem/any CNCF Kubernetes. All use one Helm chart plus per-cloud OpenTofu modules and provider adapters. |
-| Biggest risks | Catalog interoperability limits (who can write which Iceberg tables); the vendor's control plane becoming a path for exfiltration; per-cloud test matrix cost; warehouse costs exceeding OSDF-native costs when offload is placed badly. |
+| Biggest risks | Catalog interoperability limits (who can write which Iceberg tables); the vendor's control plane becoming a path for exfiltration; per-cloud test matrix cost; warehouse costs exceeding Fibrik-native costs when offload is placed badly. |
 | Effort | About 12–16 extra weeks after the pilot-ready milestone (M7), in four increments (§9). A few **foundation decisions must be made now** so the MVP doesn't have to be reworked (§8). |
 
 ---
@@ -90,7 +90,7 @@ flowchart LR
   end
   subgraph Cust[Customer cloud account - data plane]
     AG[Data-plane agent / operator]
-    K8S[OSDF on EKS/AKS/GKE/OKE]
+    K8S[Fibrik on EKS/AKS/GKE/OKE]
     LAKE[(Object storage + Iceberg)]
     WH[(Snowflake / Databricks<br/>customer accounts)]
     LLM[Customer LLM endpoint]
@@ -177,7 +177,7 @@ flowchart LR
 | Enrichment with large reference tables (CMDB, identity, TI) | **Yes** | Joins are usually cheaper where the reference data already lives |
 | Storage of gold / long retention | **Yes** | Iceberg tables in the customer's lake, readable by all engines |
 | Scheduled detections | **Yes** | Compile Sigma to Snowflake SQL / Spark SQL / BigQuery SQL |
-| Streaming detections | Partial | Platform streaming exists (Snowflake Dynamic Tables/Streams+Tasks, Databricks Structured Streaming), but latency and cost need checking. The OSDF-native path is the default |
+| Streaming detections | Partial | Platform streaming exists (Snowflake Dynamic Tables/Streams+Tasks, Databricks Structured Streaming), but latency and cost need checking. The Fibrik-native path is the default |
 | Correlation over signals | **Yes** | Windowed SQL |
 | Threat hunting / search | **Yes** | Via federated adapters, or directly on shared Iceberg |
 | Backtests, cost what-ifs, field-usage analysis | **Yes** | Large historical scans are the warehouse's strength |
@@ -185,7 +185,7 @@ flowchart LR
 
 ### 4.2 Integration patterns
 
-**P1. Shared open lake (preferred, zero-copy).** OSDF writes gold OCSF data as
+**P1. Shared open lake (preferred, zero-copy).** Fibrik writes gold OCSF data as
 **Iceberg** tables in the customer's object storage and registers them in an
 **Iceberg REST catalog**. Snowflake, Databricks, BigQuery and Trino all query
 the same files. Current state of interoperability (as of October 2026;
@@ -195,27 +195,27 @@ verify before you build):
   catalogs and can **write** to externally managed Iceberg tables (preview
   since July 2025). External engines can also write to **Snowflake-managed**
   Iceberg tables through the Horizon Catalog's Iceberg REST endpoint (GA May
-  2026). So OSDF can use either its own catalog or Snowflake Horizon as the
+  2026). So Fibrik can use either its own catalog or Snowflake Horizon as the
   catalog of record.
 - **Databricks:** the Unity Catalog Iceberg REST endpoint gives external
   engines read/write/create on **UC-managed Iceberg tables** (Public Preview),
   and read access to Delta tables through UniForm. **Foreign Iceberg tables
   (governed by another catalog) are read-only** in Databricks. If Databricks
-  must write to OSDF tables, UC has to be the catalog of record for those tables.
+  must write to Fibrik tables, UC has to be the catalog of record for those tables.
 - **Google BigQuery / Lakehouse (formerly BigLake) runtime catalog:** an Iceberg
   REST catalog with credential vending. Open source engines write; BigQuery
   writes to these tables are in Preview (June 2026).
 
-  ⇒ Requirement: OSDF must treat **the catalog as pluggable**, and choose the
+  ⇒ Requirement: Fibrik must treat **the catalog as pluggable**, and choose the
   catalog of record per table group based on which engines need to write.
 
 **P2. Native ingest + pushdown transformation.** When a customer wants
-platform-native tables (for example, Snowflake standard tables, Delta), OSDF
+platform-native tables (for example, Snowflake standard tables, Delta), Fibrik
 delivers normalized or partially normalized data into the platform's
 ingestion path. For Snowflake, that's Snowpipe/Snowpipe Streaming or files
 plus COPY. For Databricks, it's Auto Loader on cloud files, or a direct
-stream. OSDF then **generates platform-native transformation jobs** from the
-same OSDF content (§4.3).
+stream. Fibrik then **generates platform-native transformation jobs** from the
+same Fibrik content (§4.3).
 
 **P3. Detection and query pushdown.** The detection compiler gains warehouse
 dialects (pySigma backends: evaluate the existing community backends for
@@ -223,7 +223,7 @@ Snowflake/Databricks and build the missing ones). The runner executes them
 through platform APIs (the Snowflake SQL API, the Databricks SQL Statement
 Execution API) on a customer-chosen warehouse/cluster. Alternatively, it
 **deploys them as native scheduled objects** (Snowflake Tasks, Databricks
-Jobs) and reads results back into OSDF's `signals`/`alerts`.
+Jobs) and reads results back into Fibrik's `signals`/`alerts`.
 
 **P4. Federated search** (already in requirements FR-SRC-02). Agents and
 hunters query the platform in place, in its own dialect, with results mapped
@@ -231,12 +231,12 @@ to OCSF fields.
 
 ### 4.3 One content model, many execution backends
 
-The OSDF content (pipelines, OCSF mappings, rules) stays the single source of
+The Fibrik content (pipelines, OCSF mappings, rules) stays the single source of
 truth. Compilers target each backend:
 
 ```mermaid
 flowchart LR
-  C[OSDF content in Git<br/>pipelines • OCSF mappings • Sigma + x-osdf • cost policies] --> CMP[Backend compilers]
+  C[Fibrik content in Git<br/>pipelines • OCSF mappings • Sigma + x-fibrik • cost policies] --> CMP[Backend compilers]
   CMP --> V[VRL - Vector workers]
   CMP --> O[OTTL - OTel edge]
   CMP --> CHS[ClickHouse SQL]
@@ -265,7 +265,7 @@ decision and can explain it:
 
 | Input | Source |
 |---|---|
-| OSDF-native compute cost | `cost_ledger` (vCPU-hours, storage) |
+| Fibrik-native compute cost | `cost_ledger` (vCPU-hours, storage) |
 | Warehouse cost | Snowflake `ACCOUNT_USAGE` (warehouse metering, credits) and Databricks `system.billing` usage tables, imported into the `cost_ledger` with the customer's contract rates |
 | Data gravity and egress | Where the input tables live (cloud/region), egress $/GB |
 | Latency SLO | Workload class (streaming detection vs nightly backtest) |
@@ -283,18 +283,18 @@ projected saving.
 
 | ID | Requirement | Pri |
 |---|---|---|
-| FR-OFF-01 | **Execution backend interface** (`ExecutionBackend`: `capabilities()`, `estimate()`, `compile()`, `deploy()`, `run()`, `results()`, `cost()`) with implementations: `osdf-native` (Vector/ClickHouse/Trino), `snowflake`, `databricks`. Later: `bigquery`, `fabric`, `clickhouse-cloud` | P0 (interface + native), P1 (Snowflake, Databricks), P2 (others) |
+| FR-OFF-01 | **Execution backend interface** (`ExecutionBackend`: `capabilities()`, `estimate()`, `compile()`, `deploy()`, `run()`, `results()`, `cost()`) with implementations: `fibrik-native` (Vector/ClickHouse/Trino), `snowflake`, `databricks`. Later: `bigquery`, `fabric`, `clickhouse-cloud` | P0 (interface + native), P1 (Snowflake, Databricks), P2 (others) |
 | FR-OFF-02 | **Pluggable Iceberg catalog** via the Iceberg REST spec: Lakekeeper (default), Snowflake Horizon / Open Catalog, Databricks Unity Catalog, Google Lakehouse runtime catalog, AWS Glue (REST endpoint), Apache Polaris. Per table group: catalog of record, plus engines granted read/write | P0 (interface), P1 (Snowflake/UC) |
-| FR-OFF-03 | **Credential vending**: OSDF and engines get short-lived, scoped storage credentials from the catalog. No static storage keys are shared between OSDF and warehouses | P1 |
+| FR-OFF-03 | **Credential vending**: Fibrik and engines get short-lived, scoped storage credentials from the catalog. No static storage keys are shared between Fibrik and warehouses | P1 |
 | FR-OFF-04 | **Pushdown compilers** for OCSF mappings and Sigma rules to Snowflake SQL and Spark SQL (Databricks), with per-backend capability flags and fail-loud behavior | P1 |
 | FR-OFF-05 | **Native deploy targets**: Snowflake (Dynamic Tables, Streams + Tasks, Snowpipe Streaming ingest), Databricks (Lakeflow/declarative pipelines, Jobs, Auto Loader). Desired state lives in Git and is reconciled, so drift is detected | P1 |
-| FR-OFF-06 | **Results return path**: detections run on a warehouse write signals to a results table. OSDF ingests them into `signals`/`alerts` with full provenance (backend, query ID, cost) | P1 |
+| FR-OFF-06 | **Results return path**: detections run on a warehouse write signals to a results table. Fibrik ingests them into `signals`/`alerts` with full provenance (backend, query ID, cost) | P1 |
 | FR-OFF-07 | **Cross-backend equivalence tests** in CI for every pack and rule enabled on more than one backend | P1 |
-| FR-OFF-08 | **Warehouse cost ingestion** into the `cost_ledger` (Snowflake metering views, Databricks billing system tables) with tag-based attribution: OSDF sets query tags/job tags on everything it runs | P1 |
+| FR-OFF-08 | **Warehouse cost ingestion** into the `cost_ledger` (Snowflake metering views, Databricks billing system tables) with tag-based attribution: Fibrik sets query tags/job tags on everything it runs | P1 |
 | FR-OFF-09 | **Placement engine** with policies, explainable decisions, projected vs actual cost, and re-placement proposals | P2 (manual placement P1) |
 | FR-OFF-10 | **Guardrails on warehouse spend**: per-workload credit/DBU budgets, a warehouse size cap, automatic suspend, query timeouts and kill switches. Agents can't scale warehouses up | P1 |
 | FR-OFF-11 | **Agent tools are backend-agnostic**: `search_sql`, `backtest_rule` and `simulate_pipeline` accept `backend=auto` and return where they ran and what it cost. The MCP gateway policy can pin sensitive datasets to their home platform | P1 |
-| FR-OFF-12 | **Governance passthrough**: respect the platform's own row/column policies (Snowflake masking/row access policies, UC grants). OSDF service principals get the minimum roles needed, and OSDF never widens access | P1 |
+| FR-OFF-12 | **Governance passthrough**: respect the platform's own row/column policies (Snowflake masking/row access policies, UC grants). Fibrik service principals get the minimum roles needed, and Fibrik never widens access | P1 |
 | FR-OFF-13 | **Hot-store substitution**: customers with Snowflake or Databricks can run *without ClickHouse*, using the warehouse as the hot store, with documented latency and cost trade-offs | P2 |
 
 ---
@@ -326,8 +326,8 @@ projected saving.
 | Execution | ClickHouse/Trino/Vector assumed | `ExecutionBackend` interface + backend compilers + placement engine |
 | Temporal | One cluster | Default: Temporal in the data plane. Option: server in the control plane with payloads encrypted by a customer-held codec key |
 | Agents/MCP | One zone | Agents and the MCP gateway always in the data plane. Control-plane agents are limited to metadata tools (fleet health, content) |
-| Console | Served by `osdf-api` | Static SaaS app. Data APIs called directly on the data-plane endpoint (private) |
-| Cost ledger | OSDF-only costs | Adds warehouse metering import, cloud cost (billing exports: CUR, Azure Cost Management, GCP billing export, OCI cost reports) and placement attribution |
+| Console | Served by `fibrik-api` | Static SaaS app. Data APIs called directly on the data-plane endpoint (private) |
+| Cost ledger | Fibrik-only costs | Adds warehouse metering import, cloud cost (billing exports: CUR, Azure Cost Management, GCP billing export, OCI cost reports) and placement attribution |
 | IaC | Compose + Helm | + OpenTofu modules per cloud, marketplace templates, data-plane bootstrap module |
 
 New ADRs to record:
@@ -349,7 +349,7 @@ New ADRs to record:
 - **Cross-tenant risk** in the control plane: per-tenant keys, row-level
   security, separate fleet-manager channels, and a cross-tenant pen test
   in every release.
-- **Warehouse credentials**: OSDF uses dedicated service principals with
+- **Warehouse credentials**: Fibrik uses dedicated service principals with
   key-pair/OIDC workload identity federation where supported (Snowflake supports
   OIDC workload identity federation for Horizon access), never user passwords.
   Credentials are stored in the customer's secret store, not the control plane.
@@ -371,10 +371,10 @@ expensive to add later:
 3. **Use the Iceberg REST catalog API only.** No Lakekeeper-specific calls,
    so Snowflake Horizon, Unity Catalog and others can be swapped in.
 4. **Put the `ExecutionBackend` interface around the detection runner and search
-   router from day one.** Only `osdf-native` is implemented in the MVP.
+   router from day one.** Only `fibrik-native` is implemented in the MVP.
 5. **Keep the control-plane/data-plane boundary clean in code:** the config
    service and fleet manager never read event data, and the console's data
-   calls go only through `osdf-api` in the data plane.
+   calls go only through `fibrik-api` in the data plane.
 6. **Use OpenTofu for any IaC** written during the pilot.
 7. **Make the cost ledger schema backend-aware:** add `backend`, `query_id`,
    `credits`/`dbu` and `cloud` columns now.
@@ -410,11 +410,11 @@ Running in parallel: SOC 2 readiness for the control plane starts at S2.
    in Public Preview.
 3. **Catalog of record default** when a customer has *both* Snowflake and
    Databricks. Candidate rule: Unity Catalog for tables Databricks must write,
-   Horizon for tables Snowflake must write, and OSDF's Lakekeeper otherwise.
+   Horizon for tables Snowflake must write, and Fibrik's Lakekeeper otherwise.
    Snowflake can write through catalog-linked databases.
 4. **Sovereign/regulated clouds** (Azure Government, GCP sovereign, OCI
    dedicated region): in scope for year 1?
-5. **Who pays for warehouse compute** used by OSDF workloads, and how is that
+5. **Who pays for warehouse compute** used by Fibrik workloads, and how is that
    shown? (It's the customer's account, but the placement engine must make it
    visible.)
 

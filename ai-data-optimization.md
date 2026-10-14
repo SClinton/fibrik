@@ -26,7 +26,7 @@ any other provider, to:
 Calling an LLM on every event would make transformation cost scale with
 tokens instead of CPU. At even modest volumes, that costs more than the SIEM
 we are trying to save money on. It also adds latency and makes results
-non-deterministic. So OSDF uses LLMs in four ways, from most to least preferred:
+non-deterministic. So Fibrik uses LLMs in four ways, from most to least preferred:
 
 | Mode | What the LLM does | Runtime cost | Use for |
 |---|---|---|---|
@@ -111,7 +111,7 @@ All outputs are **code + tests**, proposed through the normal review flow.
 
 ## 3. Gemini integration (provider-agnostic)
 
-OSDF stays model-agnostic (FR-AGT-12). Gemini is a first-class, recommended
+Fibrik stays model-agnostic (FR-AGT-12). Gemini is a first-class, recommended
 option because it has a free tier for development, low-cost Flash-Lite models
 and a batch API:
 

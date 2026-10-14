@@ -96,7 +96,7 @@ in v0.2.
 | J5 | **Route and retain by tier**: per source/event type, choose *SIEM + lake*, *lake only*, *archive only* or *drop*, with a live cost delta before saving | Must | Changing a tier shows projected $ impact before save; data is still searchable in the lake |
 | J6 | **Investigate in the lake**: a search page (SQL editor with OCSF field autocomplete, time picker, results table, export) for data that no longer goes to the SIEM | Must | User finds a known event in lake-only data in ≤ 2 minutes |
 | J7 | **Ask the copilot**: a chat panel on every page (search agent + cost agent tools) answers questions such as "why did firewall volume spike yesterday?" and "what would dropping DNS AAAA records save?", with cited queries and results | Must | ≥ 70% of a 30-question task set answered correctly (eval) and rated useful by users |
-| J8 | **Connect your own agent**: an "Agent access" page creates an agent identity and token, and shows the MCP endpoint and a copy-paste config for Claude Code/Desktop and other MCP clients, plus the 5 core skills to download | Must | An external MCP client completes a cost-review task via OSDF tools |
+| J8 | **Connect your own agent**: an "Agent access" page creates an agent identity and token, and shows the MCP endpoint and a copy-paste config for Claude Code/Desktop and other MCP clients, plus the 5 core skills to download | Must | An external MCP client completes a cost-review task via Fibrik tools |
 | J9 | **Onboard an unknown log type with AI**: paste or upload a sample. The onboarding agent proposes a parser and OCSF mapping with a side-by-side preview and field coverage %. Approve it to deploy | Should | ≥ 60% of first proposals pass tests for held-out log types; the user can fix a mapping in the UI |
 | J10 | **Alerts with AI triage (light)**: enable a starter Sigma pack per source. Alerts list with triage verdict, confidence, evidence and agree/disagree | Should | Seeded attack data produces alerts with triage verdicts that cite events |
 | J11 | **Source health**: source list with status (healthy / silent / erroring), volume sparkline, last event, and an alert for silent sources | Must (as part of J2/J3 screens) | A silent source shows as unhealthy within 2 expected intervals |
@@ -179,10 +179,10 @@ version, described in the notes.
 | FR-COL-04 Fleet management (OpAMP) | **Must (lite)** | Enroll, show status/version/health, push config from the UI, rollback to the previous config. Staged rollouts are Post |
 | FR-COL-01 Network/protocol sources | **Must** via OTel receivers | See connector list §5.1.1 |
 | FR-COL-02 Cloud/SaaS API sources | **Must for the chosen platform's cloud only**; others Post | For example, `azureeventhub` on Azure, `awscloudwatch`/S3 on AWS, `googlecloudpubsub` on GCP |
-| FR-COL-06 Ingest tagging | **Must** | OTel `resource`/`attributes` processors set `osdf.tenant_id`, `source_id`, `collector_id`, raw size |
+| FR-COL-06 Ingest tagging | **Must** | OTel `resource`/`attributes` processors set `fibrik.tenant_id`, `source_id`, `collector_id`, raw size |
 | FR-COL-07 Edge buffering | **Must** | OTel `file_storage` extension + exporter sending queue |
 | FR-COL-03 Native edge agent packages | Should | Ship the OTel distribution as deb/rpm/MSI with the OpAMP supervisor |
-| FR-COL-05 Declarative connector framework | **Must (lite)** (promoted) | The connector package format, `otel_receiver`, `object_storage` and lite `http_pull` engines, generated UI forms, and the `osdf connector new/validate/test` CLI, so the community can add connectors without code. See [`connectors-framework.md`](connectors-framework.md) (FR-CON-01..16) |
+| FR-COL-05 Declarative connector framework | **Must (lite)** (promoted) | The connector package format, `otel_receiver`, `object_storage` and lite `http_pull` engines, generated UI forms, and the `fibrik connector new/validate/test` CLI, so the community can add connectors without code. See [`connectors-framework.md`](connectors-framework.md) (FR-CON-01..16) |
 | FR-COL-09 Staged rollouts | Post | |
 | FR-COL-10 Forwarder migration helpers | Post | |
 
@@ -198,7 +198,7 @@ distribution, and mark alpha receivers "preview" in the UI.
 | `syslog` (+ `tcplog`/`udplog`) | Firewalls, network devices, Linux | Must |
 | `filelog` | Log files on hosts (edge collector) | Must |
 | `windowseventlog` | Windows Security/System events (edge collector) | Must |
-| `splunk_hec` | **Intercept existing Splunk/HEC forwarders.** The fastest path to cost savings: point HEC at OSDF, reduce, then forward to Splunk | Must |
+| `splunk_hec` | **Intercept existing Splunk/HEC forwarders.** The fastest path to cost savings: point HEC at Fibrik, reduce, then forward to Splunk | Must |
 | `kafka` | Existing Kafka log topics | Must |
 | **`object_storage` engine: AWS S3, Azure Blob/ADLS Gen2, Google Cloud Storage** | Notification-driven ingest + backfill of logs that land in cloud storage (CloudTrail, VPC/NSG flow, audit sinks, exports), across all three clouds regardless of hosting platform | **Must** (see [`connectors-framework.md`](connectors-framework.md) §5) |
 | Cloud receiver for the chosen platform (`azureeventhub` / `awscloudwatch` / S3-based / `googlecloudpubsub`) | Cloud audit and activity logs | Must (chosen cloud only) |
@@ -276,14 +276,14 @@ flow-log packs are Should.
 | FR-AGT-07 Triage agent | Should | J10 |
 | FR-AGT-04 Detection engineering agent | Post | |
 | FR-AGT-03, 05, 08, 09 Drift, tuning, investigation, blueprints | Post | Blueprints are internal only in the MVP (Temporal is optional; APScheduler is fine for the MVP) |
-| FR-AGN-01 Domain MCP servers | **Must (lite)** | `osdf-data`, `osdf-cost`, `osdf-pipeline` (read + propose). `osdf-alerts`/`osdf-detect` arrive with J10 |
+| FR-AGN-01 Domain MCP servers | **Must (lite)** | `fibrik-data`, `fibrik-cost`, `fibrik-pipeline` (read + propose). `fibrik-alerts`/`fibrik-detect` arrive with J10 |
 | FR-AGN-02 Current MCP spec | **Must** | |
 | FR-AGN-05 Agent-first tool design | **Must** | |
 | FR-AGN-12 MCP gateway | **Must (lite)** | Auth, per-tool RBAC, budgets, audit. Third-party servers are Post |
 | FR-AGN-13 Agent identity | **Must** | J8 |
 | FR-AGN-15 Agent observability and cost | **Must** | Shown per answer and on the Agent access page |
 | FR-AGN-08 Agent Skills | **Must (lite)** | 5 skills: `reduce-siem-cost`, `connect-otel-source`, `investigate-in-lake`, `explain-cost-spike`, `onboard-log-source` |
-| FR-AGN-04 Approval inside the agent loop | Should | The MVP approves in the OSDF UI (proposal review) |
+| FR-AGN-04 Approval inside the agent loop | Should | The MVP approves in the Fibrik UI (proposal review) |
 | FR-AGN-06/07 Resources, prompts | Should | |
 | FR-AGN-03, 09, 10, 11, 16 | Post | |
 | FR-AGN-14, 17 A2A, BYO-agent kit | Later | |
@@ -309,7 +309,7 @@ flow-log packs are Should.
 | Req | Priority | MVP notes |
 |---|---|---|
 | FR-API-01 Versioned API (OpenAPI) | **Must** | The UI is built only on the public API |
-| FR-API-04 CLI | Should | Lite: `osdf validate/test` for CI on content |
+| FR-API-04 CLI | Should | Lite: `fibrik validate/test` for CI on content |
 | FR-API-05 Alert webhook | Should | With J10 |
 | FR-API-03 External MCP client support | Post | |
 | NFR-SEC-01 OIDC + RBAC | **Must** | 4 roles. Keycloak bundled; any OIDC provider supported |
@@ -364,7 +364,7 @@ flowchart LR
     V[Vector workers<br/>parse • OCSF • reduce • tier • route]
     CH[(ClickHouse hot + cost_ledger)]
     ICE[(Iceberg on cloud object storage)]
-    API[osdf-api + UI]
+    API[fibrik-api + UI]
     AG[Agents + MCP gateway + servers]
   end
   SIEM[(Customer SIEM)]
@@ -382,7 +382,7 @@ Changes to `architecture.md`:
   Vector sources. Raw archive writes move from the collectors to a Vector worker
   "archive" route that runs before any reduction (simpler: one writer, same
   guarantee).
-- **Fleet:** the OTel OpAMP supervisor is used directly. `osdf-sidecar` is only
+- **Fleet:** the OTel OpAMP supervisor is used directly. `fibrik-sidecar` is only
   needed for Vector workers, and in the MVP they're plain Kubernetes Deployments
   rendered by the config service, so the sidecar becomes Post.
 - **Trino:** optional in the MVP. Lake search can run through ClickHouse's
@@ -400,8 +400,8 @@ Changes to `architecture.md`:
 | Weeks | Platform/data track | UX/product track | Agent track |
 |---|---|---|---|
 | 0–1 | Decide hosting platform and design partner; cost baseline (execution plan §1.1a); repo + CI | 5 user interviews; journey map; clickable prototype of J1–J5 | Pick LLM providers; eval dataset plan |
-| 1–4 | OTel distribution (OCB) + OpAMP; gateway → Kafka → Vector → ClickHouse + Iceberg on the chosen cloud; cost ledger metering; osdf-api skeleton + OIDC | Design system + app shell; setup wizard; sources list | — |
-| 4–7 | Connector framework: package format, `otel_receiver` + `object_storage` (S3/Blob/GCS) engines, generated forms; MVP connector packs + OCSF mappings; live tail; rate card; baseline; SIEM destination | Connector catalog + forms (J2); cost overview (J3); **usability test #1 on the prototype/alpha** | MCP gateway + `osdf-data`/`osdf-cost` (read) |
+| 1–4 | OTel distribution (OCB) + OpAMP; gateway → Kafka → Vector → ClickHouse + Iceberg on the chosen cloud; cost ledger metering; fibrik-api skeleton + OIDC | Design system + app shell; setup wizard; sources list | — |
+| 4–7 | Connector framework: package format, `otel_receiver` + `object_storage` (S3/Blob/GCS) engines, generated forms; MVP connector packs + OCSF mappings; live tail; rate card; baseline; SIEM destination | Connector catalog + forms (J2); cost overview (J3); **usability test #1 on the prototype/alpha** | MCP gateway + `fibrik-data`/`fibrik-cost` (read) |
 | 7–10 | Reduction library; tier policies; simulation; safety check; proposals + deploy + rollback; `http_pull` engine + Okta/GitHub reference connectors | Recommendations inbox + proposal review (J4); tier editor (J5); change history | **Cost optimization agent**; agent identity |
 | 10–13 | Lake search path; saved searches; guardrails; silent-source health | Search page (J6); copilot panel (J7); agent access page (J8) | Search agent; 5 skills; evals in CI |
 | 13–15 | Hardening, performance at reference footprint, Helm upgrade path, security review | Polish, accessibility pass, empty states, docs; **usability test #2 (beta)** | Should items: onboarding agent (J9), Sigma starter pack + triage (J10) if on track |

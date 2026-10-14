@@ -1,6 +1,8 @@
-# Agentic SOC Data Platform — Open Source Specification
+# Fibrik
 
-Working name: **OpenSOC Data Fabric (OSDF)**.
+**Open source, agentic security data pipeline.** Keep the signal, cut the cost.
+
+Project name: **Fibrik** (formerly the working name "OpenSOC Data Fabric"). Repository: `SClinton/fibrik`.
 
 This folder holds the research and specification for an open source platform
 that offers the core capabilities of four commercial products:
@@ -27,7 +29,7 @@ before the detection and agent work.
 
 **An agentic-native SOC data platform.** Every capability is exposed through
 domain-split **MCP servers** with tools designed for agents. SOC procedures
-ship as portable **Agent Skills** (`SKILL.md`). All agents, whether OSDF's own,
+ship as portable **Agent Skills** (`SKILL.md`). All agents, whether Fibrik's own,
 the customer's, third-party assistants or vendor agents over **A2A**, go
 through one gateway with per-agent identity, policy, budgets and audit. See
 requirements GA and §5.11, and architecture §8.6–§8.11.

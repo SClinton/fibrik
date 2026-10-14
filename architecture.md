@@ -1,4 +1,4 @@
-# Architecture: OpenSOC Data Fabric (OSDF)
+# Architecture: Fibrik
 
 - Status: Draft v0.1
 - Date: 2026-10-14
@@ -15,7 +15,7 @@
    **LLMs are never called per event** (NFR-COST-03).
 1. **Assemble, don't reinvent.** Use proven open source engines for the
    heavy parts (stream transport, transforms, storage, query, workflow).
-   OSDF's own code is the **control plane, the content model, the
+   Fibrik's own code is the **control plane, the content model, the
    detection compiler glue, and the agents**. Commercial vendors differentiate
    in these areas too.
 2. **Control plane and data plane are separate** (the Cribl leader/worker model).
@@ -26,7 +26,7 @@
 4. **Open formats at rest.** OCSF events in Iceberg/Parquet on object storage.
    Any engine can read the lake, and there is no lock-in.
 5. **Storage-agnostic detections** (the Anvilogic model). Sigma is the source,
-   compiled per backend. OSDF can run detections itself or push them to a SIEM.
+   compiled per backend. Fibrik can run detections itself or push them to a SIEM.
 6. **Agents propose, deterministic checks verify, humans approve.** LLM output
    never reaches production without passing compilers, schema validators
    and tests.
@@ -35,8 +35,8 @@
 8. **Agentic-native by design** (secondary use case, requirements GA). Every
    capability is exposed as **MCP tools** designed for agents, and SOC
    procedures ship as **Agent Skills**. External agents are first-class
-   consumers alongside OSDF's own agents, and they share the same identity,
-   policy, budget and audit controls. The OSDF UI and CLI use the same API
+   consumers alongside Fibrik's own agents, and they share the same identity,
+   policy, budget and audit controls. The Fibrik UI and CLI use the same API
    underneath, so agents and humans see one platform (§8.6–§8.11).
 
 ---
@@ -52,7 +52,7 @@ flowchart LR
     S4[Kafka / OTLP / HTTP]
   end
 
-  subgraph OSDF
+  subgraph Fibrik
     CP[Control Plane]
     DP[Data Plane - collectors + pipeline workers]
     LK[(Lake - Iceberg on S3)]
@@ -93,7 +93,7 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph ControlPlane[Control Plane]
-    API[osdf-api - REST/gRPC, RBAC, audit]
+    API[fibrik-api - REST/gRPC, RBAC, audit]
     CFG[Config service - Git sync, render, validate]
     FLEET[Fleet manager - OpAMP server]
     REG[Schema registry + Source catalog]
@@ -108,7 +108,7 @@ flowchart TB
     BUS[(Kafka)]
     WRK[Pipeline workers - Vector transforms VRL]
     LW[Lake writer - Iceberg Kafka Connect sink]
-    SIDE[osdf-sidecar - OpAMP client, config pull, health]
+    SIDE[fibrik-sidecar - OpAMP client, config pull, health]
   end
 
   subgraph Storage
@@ -158,10 +158,10 @@ flowchart TB
 
 | Module | Responsibility | Built on | Reqs |
 |---|---|---|---|
-| `osdf-api` | Public API, RBAC, tenancy, audit log, proposal lifecycle | Python FastAPI + Postgres, Keycloak (OIDC), OPA (policy) | FR-API-01, NFR-SEC-* |
-| `config-service` | Pulls Git, renders OSDF YAML into engine configs (Vector TOML/YAML, ClickHouse DDL, compiled rules), validates, versions and stages rollouts | Python, Jinja/pydantic, `vector validate` | FR-PIP-01/02/13, NFR-OPS-04 |
+| `fibrik-api` | Public API, RBAC, tenancy, audit log, proposal lifecycle | Python FastAPI + Postgres, Keycloak (OIDC), OPA (policy) | FR-API-01, NFR-SEC-* |
+| `config-service` | Pulls Git, renders Fibrik YAML into engine configs (Vector TOML/YAML, ClickHouse DDL, compiled rules), validates, versions and stages rollouts | Python, Jinja/pydantic, `vector validate` | FR-PIP-01/02/13, NFR-OPS-04 |
 | `fleet-manager` | Agent and worker enrollment, grouping, config distribution, health, version rollout | Go, `opamp-go` server | FR-COL-04 |
-| `osdf-sidecar` | Runs next to every Vector process (OTel Collectors use their native OpAMP supervisor instead). OpAMP client: pulls config, validates locally, hot reloads, rolls back on failure, reports health | Go, `opamp-go` client | FR-COL-04, NFR-REL-02 |
+| `fibrik-sidecar` | Runs next to every Vector process (OTel Collectors use their native OpAMP supervisor instead). OpAMP client: pulls config, validates locally, hot reloads, rolls back on failure, reports health | Go, `opamp-go` client | FR-COL-04, NFR-REL-02 |
 | Collector tier | Network listeners and API pullers. Writes raw to Kafka plus the raw archive | Vector (sources), OTel Collector (OTLP), declarative REST connector runner | FR-COL-* |
 | Kafka | Durable bus and persistent queue. Decouples ingest from processing and destinations | Apache Kafka (KRaft) | FR-PIP-06, NFR-REL-03 |
 | Pipeline workers | Parse, normalize to OCSF, enrich, mask, reduce, route, fan out | Vector + VRL, Presidio-derived rule packs for the guard | FR-PIP-*, FR-SCH-* |
@@ -170,16 +170,16 @@ flowchart TB
 | Lake | System of record, replay source, long-term hunting | Iceberg + Lakekeeper REST catalog + object storage | FR-LAK-* |
 | Trino | One SQL endpoint over Iceberg + ClickHouse (+ PostgreSQL, OpenSearch connectors) | Trino | FR-SRC-01 |
 | Federated adapters | Query external SIEMs/lakes in their native language and normalize results | Python adapters (Splunk REST, Azure Monitor Query, Elastic, Snowflake, Databricks SQL) | FR-SRC-02 |
-| Detection compiler | Sigma + `x-osdf` → backend queries. Custom ClickHouse and VRL backends | pySigma + backends | FR-DET-01/02 |
+| Detection compiler | Sigma + `x-fibrik` → backend queries. Custom ClickHouse and VRL backends | pySigma + backends | FR-DET-01/02 |
 | Detection runner | Scheduled windowed execution, dedup, signal/alert emission, SIEM deployers | Python worker, Temporal schedules | FR-DET-03 |
 | Correlator | Signals → alerts (sequence/threshold/risk) | ClickHouse SQL (MVP), Apache Flink (P2, for streaming state) | FR-DET-06 |
 | Health & drift | Silence, volume, schema drift, data-quality score | Python + ClickHouse aggregates, Prometheus metrics | FR-HLT-* |
 | Graph | Source↔field↔detection↔ATT&CK↔CTI, plus embeddings for retrieval | PostgreSQL + Apache AGE + pgvector | FR-GRF-* |
 | Agent runtime | Agent graphs, tools, memory, human-in-the-loop | LangGraph (Python), run inside Temporal workflows | FR-AGT-* |
-| MCP servers | Domain-split servers (`osdf-data`, `-pipeline`, `-detect`, `-alerts`, `-cost`, `-admin`) expose tools, resources and prompts to OSDF agents *and* external clients | Python MCP SDK (stateless HTTP) | FR-API-02, FR-AGN-01..07 |
+| MCP servers | Domain-split servers (`fibrik-data`, `-pipeline`, `-detect`, `-alerts`, `-cost`, `-admin`) expose tools, resources and prompts to Fibrik agents *and* external clients | Python MCP SDK (stateless HTTP) | FR-API-02, FR-AGN-01..07 |
 | MCP gateway | One governed entry point: OAuth, OPA per-tool policy, budgets, audit, tool pinning, third-party server allowlist | LiteLLM MCP gateway or a thin custom gateway (evaluate open source gateways) + OPA | FR-AGN-12/13 |
-| Skills registry | Versioned, signed `SKILL.md` skills from `osdf-content` packs; served to OSDF agents and exportable to other clients | Git + OCI artifact + MCP resources | FR-AGN-08/09 |
-| A2A endpoint (P2) | Publishes OSDF agents with signed agent cards; delegates blueprint steps to external agents | A2A SDK | FR-AGN-14 |
+| Skills registry | Versioned, signed `SKILL.md` skills from `fibrik-content` packs; served to Fibrik agents and exportable to other clients | Git + OCI artifact + MCP resources | FR-AGN-08/09 |
+| A2A endpoint (P2) | Publishes Fibrik agents with signed agent cards; delegates blueprint steps to external agents | A2A SDK | FR-AGN-14 |
 | LLM gateway | Model routing, fallback, budgets, PII redaction before egress | LiteLLM proxy; vLLM or Ollama for local models | FR-AGT-12, NFR-AI-02 |
 | Validator sandbox | Runs untrusted generated artifacts (VRL tests, SQL dry runs, Sigma compile) in isolated, network-less containers | gVisor/Kata or plain rootless containers with no network; `vector test`, ClickHouse `EXPLAIN` | NFR-AI-01/04 |
 | Observability | Self-telemetry, dashboards, LLM tracing | OpenTelemetry, Prometheus, Grafana, Langfuse | NFR-OPS-02, NFR-AI-03 |
@@ -196,8 +196,8 @@ flowchart TB
 |---|---|---|---|
 | Edge/collector/transform engine | **Vector** | MPL-2.0 | Fluent Bit (Apache-2.0) for very small footprints; OTel Collector (Apache-2.0) for OTLP-native and OpAMP-native fleets; Tenzir (executor BSD-3, but check which parts are closed) |
 | Transform language | **VRL** (Vector Remap Language) | MPL-2.0 | Chosen because it is typed, sandboxed, fast, has built-in unit tests (`vector test`), and is easy for LLMs to generate and for compilers to verify |
-| Edge runtime (OTel-native fleets) | **OpenTelemetry Collector** (contrib or a custom OCB build) + OTTL | Apache-2.0 | The model BindPlane uses with its BDOT distribution. OSDF renders edge pipelines to OTel config when a group's runtime is `otelcol` (FR-COL-08) |
-| Fleet protocol | **OpAMP** (`opamp-go`) | Apache-2.0 | Proven at very large scale by BindPlane. The OTel Collector has a native OpAMP extension/supervisor, and Vector uses the `osdf-sidecar` |
+| Edge runtime (OTel-native fleets) | **OpenTelemetry Collector** (contrib or a custom OCB build) + OTTL | Apache-2.0 | The model BindPlane uses with its BDOT distribution. Fibrik renders edge pipelines to OTel config when a group's runtime is `otelcol` (FR-COL-08) |
+| Fleet protocol | **OpAMP** (`opamp-go`) | Apache-2.0 | Proven at very large scale by BindPlane. The OTel Collector has a native OpAMP extension/supervisor, and Vector uses the `fibrik-sidecar` |
 | Message bus | **Apache Kafka** (KRaft) | Apache-2.0 | Redpanda is BSL (avoid on the default path). NATS JetStream (Apache-2.0) for small deployments |
 | Object storage | **SeaweedFS** or **Ceph RGW** (prod), any S3 in cloud | Apache-2.0 / LGPL | Garage (AGPL). MinIO community edition is AGPL and moved to source-only maintenance in 2025, so avoid it as the default |
 | Table format | **Apache Iceberg** | Apache-2.0 | Delta Lake (Apache-2.0) if the Databricks ecosystem is the priority |
@@ -275,17 +275,17 @@ sequenceDiagram
 | `dest.<destination_id>` | Destination-specific reduced streams (for example, SIEM-bound) | 24 h |
 | `dlq.<tenant>` | Parse or validation failures with reason, raw and pipeline version | 7 d |
 | `signals`, `alerts` | Detection outputs | 7 d |
-| `osdf.audit`, `osdf.health` | Internal | 30 d |
+| `fibrik.audit`, `fibrik.health` | Internal | 30 d |
 
-### 5.3 OSDF content model (rendered to Vector)
+### 5.3 Fibrik content model (rendered to Vector)
 
-Users and agents write **OSDF YAML**. The config service compiles it into
+Users and agents write **Fibrik YAML**. The config service compiles it into
 Vector config, so the engine can be swapped later and the YAML is easier for
 LLMs to work with.
 
 ```yaml
 # packs/linux-sshd/pipelines/sshd_to_ocsf.yaml
-apiVersion: osdf/v1
+apiVersion: fibrik/v1
 kind: Pipeline
 metadata: { name: linux-sshd-ocsf, pack: linux-sshd, version: 1.2.0 }
 spec:
@@ -330,7 +330,7 @@ land on the same worker. For global state, use Valkey (FR-PIP-11, P2).
 
 ### 5.5 Replay (FR-PIP-05)
 
-`osdf replay --source X --from T1 --to T2 --pipeline P --dest D` starts a
+`fibrik replay --source X --from T1 --to T2 --pipeline P --dest D` starts a
 Temporal workflow. It lists the archive objects by prefix
 (`tenant/source/yyyy/mm/dd/hh`), streams them into the topic
 `replay.<job_id>`, and starts a temporary Vector worker with pipeline P and
@@ -339,7 +339,7 @@ destination D. Progress and counts are reported, and the job can be cancelled.
 ### 5.6 Lake layout
 
 ```
-s3://osdf-lake/
+s3://fibrik-lake/
   bronze/   (raw archive, gzip NDJSON, written by collectors; Iceberg table over it in P1)
   warehouse/                      (Iceberg, Lakekeeper catalog)
     silver.<source_type>          (parsed, source-native)
@@ -355,9 +355,9 @@ optimization agent.
 
 ### 5.7 Cost architecture (primary use case)
 
-**Where the money goes and which OSDF lever removes it:**
+**Where the money goes and which Fibrik lever removes it:**
 
-| Cost driver | Lever in OSDF | Component | Typical effect (to verify in pilot) |
+| Cost driver | Lever in Fibrik | Component | Typical effect (to verify in pilot) |
 |---|---|---|---|
 | SIEM ingest/license | Tiered routing: only detect-critical events and fields go to the SIEM | Route policies + reduction functions on Vector workers | 30–60% fewer GB/day to the SIEM |
 | SIEM ingest/license | Field reduction: drop raw duplicate fields after parsing, nulls/defaults, verbose blobs | `reduce` steps, `keep_fields` per destination | 20–40% smaller events |
@@ -366,7 +366,7 @@ optimization agent.
 | SIEM workload/compute | Run detections and hunts on ClickHouse or the lake instead of in the SIEM | Detection runner, compiled Sigma | Lower SIEM search load |
 | Storage | Parquet + ZSTD, sort by `(tenant, class, time)`, compaction, TTL tiers | Lake writer, compaction jobs, ClickHouse TTL | 10–20× compression vs raw text |
 | Transformation compute | Efficient Rust engine (Vector), one parse per event (fan out after parsing), no per-event LLM, autoscaling on Kafka lag | Workers + KEDA | Linear CPU cost per EPS |
-| Pipeline tool licenses | Open source replaces Cribl/BindPlane/Databahn licenses | Whole platform | License line removed; offset by OSDF infra + ops (shown in the net figure) |
+| Pipeline tool licenses | Open source replaces Cribl/BindPlane/Databahn licenses | Whole platform | License line removed; offset by Fibrik infra + ops (shown in the net figure) |
 | Engineering labor | Onboarding, drift, optimization and detection agents produce tested PRs | Agent layer | Fewer hours per source and per rule |
 
 **Metering flow:**
@@ -390,9 +390,9 @@ flowchart LR
   bytes_out, baseline_bytes`. Cost views join it with the rate card, so
   changing a price recomputes history without re-metering.
 - **Baseline** is the raw size at the collector (before any reduction) priced
-  at the current SIEM rate. It is what you would pay without OSDF.
+  at the current SIEM rate. It is what you would pay without Fibrik.
 - **Net savings** = baseline cost − (SIEM cost after reduction + lake storage
-  + OSDF infrastructure + LLM tokens). This net figure is the headline number.
+  + Fibrik infrastructure + LLM tokens). This net figure is the headline number.
 - **What-if simulation** runs the proposed pipeline in the validator sandbox
   against a 24 h sample read from Iceberg, and writes projected rows to
   `cost_ledger_sim`.
@@ -401,7 +401,7 @@ flowchart LR
   `requires`. A non-empty intersection blocks the change.
 
 ```yaml
-# osdf-content/environments/prod/rates.yaml
+# fibrik-content/environments/prod/rates.yaml
 currency: USD
 destinations:
   splunk-prod:   { model: ingest, usd_per_gb: 4.00 }   # example value; use your contract
@@ -418,7 +418,7 @@ llm:             { default_usd_per_mtok_in: 3.0, default_usd_per_mtok_out: 15.0 
 
 ```mermaid
 flowchart LR
-  R[Sigma rule + x-osdf<br/>in Git] --> C[Compiler<br/>pySigma]
+  R[Sigma rule + x-fibrik<br/>in Git] --> C[Compiler<br/>pySigma]
   C --> Q1[ClickHouse SQL]
   C --> Q2[Trino SQL]
   C --> Q3[VRL condition - streaming]
@@ -448,7 +448,7 @@ detection:
   condition: selection
 tags: [attack.credential_access, attack.t1110]
 level: medium
-x-osdf:
+x-fibrik:
   kind: signal                 # signal | alert
   entity: [user.name, src_endpoint.ip]
   risk_score: 30
@@ -461,7 +461,7 @@ x-osdf:
 ```
 
 Sigma correlation rules (`type: event_count | value_count | temporal`)
-group signals into alerts. An OSDF `risk` correlation type sums
+group signals into alerts. An Fibrik `risk` correlation type sums
 `risk_score` per entity over a window and fires when it passes a threshold.
 This is Anvilogic-style "warning → threat scenario" correlation.
 
@@ -521,7 +521,7 @@ flowchart LR
   A <--> TOOLS[MCP client]
   A --> SK[Skills<br/>loaded on demand]
   TOOLS <--> MGW[MCP gateway<br/>authN, OPA, budgets, audit]
-  MGW <--> MCP[OSDF domain MCP servers]
+  MGW <--> MCP[Fibrik domain MCP servers]
   MGW <--> EXT[Allowlisted external MCP servers]
   A <--> GW[LLM gateway]
   A --> VAL[Validator sandbox]
@@ -576,7 +576,7 @@ policies enforce the levels.
   external model providers, or blocks external providers entirely.
 - Output validators check that triage verdicts cite real event IDs, so
   hallucinated evidence is rejected.
-- Agent runs are fully traced (Langfuse) and audit-logged (`osdf.audit`).
+- Agent runs are fully traced (Langfuse) and audit-logged (`fibrik.audit`).
 - Alignment: OWASP Top 10 for LLM Applications and OWASP Top 10 for Agentic
   Applications. Use them as a threat-model checklist in design reviews.
 
@@ -592,33 +592,33 @@ policies enforce the levels.
 
 ### 8.6 Agentic-native platform overview (secondary use case)
 
-OSDF treats agents as a primary interface, not an add-on. The platform's
+Fibrik treats agents as a primary interface, not an add-on. The platform's
 "agent surface" has four parts:
 
 ```mermaid
 flowchart TB
   subgraph Clients[Agent clients]
-    OA[OSDF agents<br/>LangGraph + Temporal]
+    OA[Fibrik agents<br/>LangGraph + Temporal]
     XA[External assistants<br/>Claude, Copilot, Gemini, Codex]
     CA[Customer agent frameworks]
     VA[Vendor agents<br/>via A2A]
   end
-  subgraph Surface[OSDF agent surface]
+  subgraph Surface[Fibrik agent surface]
     GW[MCP gateway<br/>OAuth • OPA • budgets • audit • tool pinning]
     A2A[A2A endpoint<br/>signed agent cards]
     subgraph Servers[Domain MCP servers]
-      D[osdf-data]
-      P[osdf-pipeline]
-      DT[osdf-detect]
-      AL[osdf-alerts]
-      C[osdf-cost]
-      AD[osdf-admin]
+      D[fibrik-data]
+      P[fibrik-pipeline]
+      DT[fibrik-detect]
+      AL[fibrik-alerts]
+      C[fibrik-cost]
+      AD[fibrik-admin]
     end
     SK[Skills registry<br/>SKILL.md packs]
-    SDK[Code-execution sandbox<br/>typed osdf SDK]
+    SDK[Code-execution sandbox<br/>typed fibrik SDK]
   end
-  subgraph Core[OSDF core]
-    API[osdf-api] --- CH[(ClickHouse)] --- ICE[(Iceberg)]
+  subgraph Core[Fibrik core]
+    API[fibrik-api] --- CH[(ClickHouse)] --- ICE[(Iceberg)]
     API --- GIT[(Content Git)]
     API --- TMP[Temporal]
   end
@@ -642,18 +642,18 @@ flowchart TB
 
 | Server | Tools (examples) | Resources | Prompts | Default scope |
 |---|---|---|---|---|
-| `osdf-data` | `search_sql`, `search_federated`, `get_result_page`, `summarize_result`, `explain_query`, `list_tables` | `schema://ocsf/<class>` schema cards, `catalog://sources/<id>` | `/hunt` | read |
-| `osdf-pipeline` | `list_sources`, `sample_source`, `test_pipeline`, `simulate_pipeline`, `validate_ocsf`, `propose_change` | `pack://<name>`, `pipeline://<id>` | `/onboard` | read + propose |
-| `osdf-detect` | `search_rules`, `compile_rule`, `test_rule`, `backtest_rule` (task), `coverage_for_technique`, `rule_health` | `rule://<id>`, `attack://<technique>` | `/write-detection` | read + propose |
-| `osdf-alerts` | `list_alerts`, `get_alert_context`, `entity_history`, `similar_alerts`, `annotate_alert`, `record_verdict` | `alert://<id>` (subscribable) | `/triage` | read + annotate |
-| `osdf-cost` | `cost_report`, `top_cost_sources`, `field_usage`, `cost_check`, `savings_since` | `rates://<env>` | `/reduce-cost` | read |
-| `osdf-admin` | `deployments`, `fleet_status`, `rollback` (approval required) | — | — | admin only, never granted to agents by default |
+| `fibrik-data` | `search_sql`, `search_federated`, `get_result_page`, `summarize_result`, `explain_query`, `list_tables` | `schema://ocsf/<class>` schema cards, `catalog://sources/<id>` | `/hunt` | read |
+| `fibrik-pipeline` | `list_sources`, `sample_source`, `test_pipeline`, `simulate_pipeline`, `validate_ocsf`, `propose_change` | `pack://<name>`, `pipeline://<id>` | `/onboard` | read + propose |
+| `fibrik-detect` | `search_rules`, `compile_rule`, `test_rule`, `backtest_rule` (task), `coverage_for_technique`, `rule_health` | `rule://<id>`, `attack://<technique>` | `/write-detection` | read + propose |
+| `fibrik-alerts` | `list_alerts`, `get_alert_context`, `entity_history`, `similar_alerts`, `annotate_alert`, `record_verdict` | `alert://<id>` (subscribable) | `/triage` | read + annotate |
+| `fibrik-cost` | `cost_report`, `top_cost_sources`, `field_usage`, `cost_check`, `savings_since` | `rates://<env>` | `/reduce-cost` | read |
+| `fibrik-admin` | `deployments`, `fleet_status`, `rollback` (approval required) | — | — | admin only, never granted to agents by default |
 
 Implementation notes:
 - **Spec revision.** Build on the current MCP revision (2026-07-28 at the time
   of writing), which has a stateless protocol core. Servers run as ordinary
   stateless HTTP services behind the gateway and scale horizontally. Any state
-  lives in OSDF (result handles in ClickHouse, jobs in Temporal), not in MCP
+  lives in Fibrik (result handles in ClickHouse, jobs in Temporal), not in MCP
   sessions. Verify the exact features against the final spec text before
   implementation.
 - **Long-running operations** such as `backtest_rule`, `replay` and
@@ -664,7 +664,7 @@ Implementation notes:
   human answers inside their own agent client, or returns
   `approval_required` + proposal URL. Either way, the approval is recorded in
   the audit log against the agent identity.
-- **Same backend for UI and agents.** Tools are thin adapters over `osdf-api`,
+- **Same backend for UI and agents.** Tools are thin adapters over `fibrik-api`,
   so there is one implementation of business logic and RBAC.
 
 ### 8.8 Tool design principles (agent-first)
@@ -699,8 +699,8 @@ Implementation notes:
 **What a skill is.** A folder with `SKILL.md` (YAML front matter `name` +
 `description`, then instructions), plus optional `scripts/`, `templates/`
 and `reference/`. Agents load only the name and description up front, then the
-body when relevant, then the files on demand (progressive disclosure). OSDF
-uses the open Agent Skills format, so the same skill works in OSDF agents and
+body when relevant, then the files on demand (progressive disclosure). Fibrik
+uses the open Agent Skills format, so the same skill works in Fibrik agents and
 in any skills-compatible client.
 
 **How skills relate to tools:** tools are *capabilities* (what can be done),
@@ -708,7 +708,7 @@ and skills are *procedures* (how a SOC does it well, in order, with checks).
 A skill names the MCP tools it uses and the checks it must pass.
 
 ```
-osdf-content/packs/core-skills/skills/
+fibrik-content/packs/core-skills/skills/
   onboard-log-source/
     SKILL.md                 # steps: sample → identify → map OCSF → test → simulate cost → propose
     reference/ocsf-mapping-guide.md
@@ -730,21 +730,21 @@ description: Find and propose safe volume reductions for the most expensive
   security data sources. Use when asked to cut SIEM/ingest cost or review a
   source's volume. Never removes fields used by production detections.
 ---
-1. Call `osdf-cost.top_cost_sources(days=7, limit=10)`.
-2. For each source, call `osdf-cost.field_usage(source_id)` and
-   `osdf-pipeline.sample_source(source_id, n=500)`.
+1. Call `fibrik-cost.top_cost_sources(days=7, limit=10)`.
+2. For each source, call `fibrik-cost.field_usage(source_id)` and
+   `fibrik-pipeline.sample_source(source_id, n=500)`.
 3. Choose reductions from reference/reduction-catalog.md, in order of
    savings ÷ risk. Prefer tiering and dropping redundant raw fields first.
-4. Call `osdf-pipeline.simulate_pipeline(...)`, then `osdf-cost.cost_check(...)`.
+4. Call `fibrik-pipeline.simulate_pipeline(...)`, then `fibrik-cost.cost_check(...)`.
    Stop if the check fails.
-5. Call `osdf-pipeline.propose_change(...)` with projected $/month and the safety report.
+5. Call `fibrik-pipeline.propose_change(...)` with projected $/month and the safety report.
 ```
 
 **Skill lifecycle (same as other content):** author (a human, or an agent
 proposing a new skill from a successful run) → PR → CI (front-matter lint,
 references resolve to existing tools, scripts run in the sandbox, **skill
 evals** show a better task success rate than with no skill) → signed
-release in a pack → distributed to OSDF agents and exported as a bundle
+release in a pack → distributed to Fibrik agents and exported as a bundle
 for external clients. Treat third-party skills like code dependencies:
 review them, pin them and scan them. A skill can carry instructions and
 scripts, so it is a supply-chain and prompt-injection vector.
@@ -757,18 +757,18 @@ them:
 - **Tool search / deferred loading.** Keep servers small and descriptions
   precise, and publish a tool catalog, so clients that load tool schemas on
   demand work well.
-- **Code execution.** A typed `osdf` Python SDK, generated from the tool
+- **Code execution.** A typed `fibrik` Python SDK, generated from the tool
   schemas, is available inside the network-less validator sandbox. The agent
   writes a short script, for example: query, join with `field_usage`, compute
   savings, and return the top 10. Only the final result enters the context.
   The sandbox has CPU, memory and time limits. It can reach only the MCP
   gateway, with the agent's own token, so policy still applies to every call.
   Public reports claim large token savings from this pattern. Measure it
-  with OSDF's own evals before relying on it.
+  with Fibrik's own evals before relying on it.
 
 ### 8.11 Agent identity, gateway and A2A
 
-- **Identity.** Each agent (OSDF built-in, customer, or third-party) is
+- **Identity.** Each agent (Fibrik built-in, customer, or third-party) is
   registered as an OAuth client in Keycloak (or uses workload identity). It
   receives short-lived, **audience-bound** tokens per MCP server, carrying tenant,
   allowed tools and autonomy level as claims. It never reuses a human
@@ -777,7 +777,7 @@ them:
 - **Gateway policy (OPA)** is evaluated per call on agent, tool, arguments,
   tenant and autonomy level. Examples: `search_sql` limited to 50 GB scanned;
   `record_verdict(auto_close=true)` only at L3 and above the measured
-  precision threshold; `osdf-admin` denied to all agents by default.
+  precision threshold; `fibrik-admin` denied to all agents by default.
 - **Tool pinning.** The gateway records a hash of each server's tool
   definitions. A change in a third-party server's tool descriptions blocks
   that server until a human re-approves it (defends against tool poisoning
@@ -786,13 +786,13 @@ them:
   untrusted. Known injection patterns are flagged, and secrets/PII are masked
   according to the egress policy.
 - **Audit.** Every call records agent identity, on-behalf-of user, tool,
-  argument hash, result size, cost, decision and trace ID, written to `osdf.audit`.
+  argument hash, result size, cost, decision and trace ID, written to `fibrik.audit`.
 - **Third-party MCP servers** (for example, a SIEM vendor's MCP server for
   Sentinel or Splunk data, EDR, ticketing, TI) are registered in the
-  gateway allowlist with their own scopes. That makes OSDF the single governed
-  point where SOC agents reach *all* security tools. OSDF does not replace
+  gateway allowlist with their own scopes. That makes Fibrik the single governed
+  point where SOC agents reach *all* security tools. Fibrik does not replace
   those servers.
-- **A2A (P2).** OSDF's triage, onboarding, detection and cost agents are
+- **A2A (P2).** Fibrik's triage, onboarding, detection and cost agents are
   published with signed agent cards (`/.well-known/agent-card.json`), so an
   external orchestrator can delegate whole tasks. Blueprints can delegate a step
   to an allowlisted external agent. The rule of thumb: MCP for agent→tool,
@@ -815,7 +815,7 @@ them:
 
 ### 9.2 GitOps deployment flow
 1. A change is merged to `main` in the content repo.
-2. CI runs `osdf validate && osdf test && osdf compile` and publishes a
+2. CI runs `fibrik validate && fibrik test && fibrik compile` and publishes a
    content bundle (an OCI artifact signed with cosign).
 3. The config service resolves the bundle for each worker group (variables,
    secrets references) and records a `deployment`.
@@ -836,7 +836,7 @@ tenant-scoped, and agents run with tenant-scoped credentials.
 
 | Topology | Use | Components |
 |---|---|---|
-| **Dev / laptop** | Development, demo, MVP | Docker Compose: 1× each of Kafka, Vector collector, Vector worker, ClickHouse, SeaweedFS, Lakekeeper, Trino, Postgres, Temporal, LiteLLM, Ollama (optional), Grafana, osdf-api, osdf-agents, Gitea |
+| **Dev / laptop** | Development, demo, MVP | Docker Compose: 1× each of Kafka, Vector collector, Vector worker, ClickHouse, SeaweedFS, Lakekeeper, Trino, Postgres, Temporal, LiteLLM, Ollama (optional), Grafana, fibrik-api, fibrik-agents, Gitea |
 | **Single node appliance** | Small sites (≤ 50 GB/day) | Same as dev, hardened, with systemd or k3s |
 | **Kubernetes HA** | Production | Helm umbrella chart. Strimzi Kafka (3+ brokers), ClickHouse via operator (2 replicas × N shards), Vector as Deployments per worker group with HPA on consumer lag, Lakekeeper ×2, Trino coordinator + workers, Temporal HA, Postgres HA (CloudNativePG), object storage from the cloud or Ceph |
 | **Hybrid** | Distributed enterprise / MSSP | Central control plane. Worker groups in each site/VPC connect outbound to the control plane (OpAMP over mTLS) and to the regional Kafka |
@@ -852,22 +852,22 @@ compresses 10–20× versus raw text.
 
 | # | Decision | Rationale | Trade-off |
 |---|---|---|---|
-| ADR-01 | Use Vector as the data-plane engine, behind an OSDF YAML abstraction | Mature, fast, many sources/sinks, VRL is safe and testable, hot reload | Its per-process state and lack of a native Iceberg sink are covered by Kafka partitioning and the Kafka Connect sink. The abstraction allows a Fluent Bit or Tenzir backend later |
+| ADR-01 | Use Vector as the data-plane engine, behind an Fibrik YAML abstraction | Mature, fast, many sources/sinks, VRL is safe and testable, hot reload | Its per-process state and lack of a native Iceberg sink are covered by Kafka partitioning and the Kafka Connect sink. The abstraction allows a Fluent Bit or Tenzir backend later |
 | ADR-02 | Kafka as the backbone between collect, process and deliver | Persistent queue, replay, decoupled scaling, ecosystem (Connect, Flink) | Operational weight; NATS is an option for small installs |
 | ADR-03 | OCSF as the canonical schema | Vendor-neutral, broad adoption (AWS Security Lake, many vendors), good for LLM mapping | Some sources map imperfectly, so keep `unmapped` and the silver tier |
 | ADR-04 | Iceberg + ClickHouse dual storage | Open lake for cost and portability, ClickHouse for speed | Two stores to keep consistent. The hot store is a TTL cache of gold |
-| ADR-05 | Sigma as the detection source format | The largest open rule corpus, pySigma backends, correlation spec | Its expressiveness is limited, so `x-osdf` extensions and raw-SQL rules serve as an escape hatch |
+| ADR-05 | Sigma as the detection source format | The largest open rule corpus, pySigma backends, correlation spec | Its expressiveness is limited, so `x-fibrik` extensions and raw-SQL rules serve as an escape hatch |
 | ADR-06 | Temporal for blueprints and long-running jobs | Durable, human-in-the-loop waits, retries, visibility | Another stateful service |
 | ADR-07 | Agents write PRs, never config | Auditability, reversibility, reuses CI | Slower than direct writes. L2 auto-merge for low-risk changes reduces the friction |
 | ADR-08 | MCP as the only tool interface for agents | One tool surface for internal agents and external assistants, with policy enforced once | MCP spec is still changing, so pin the version |
 | ADR-09 | Python control plane, Go edge components | Speed of development plus the AI ecosystem; static binaries at the edge | Two toolchains |
-| ADR-10 | Two edge runtimes (Vector and the OTel Collector) behind one OSDF YAML and one OpAMP fleet manager | BindPlane shows that OTel + OpAMP is becoming the standard for agent fleets. Supporting it avoids rip-and-replace for OTel shops | Renderer and test matrix for two engines. Edge-side OTel pipelines support a subset of functions (filter, mask, route, enrich); OCSF mapping stays on Vector workers |
+| ADR-10 | Two edge runtimes (Vector and the OTel Collector) behind one Fibrik YAML and one OpAMP fleet manager | BindPlane shows that OTel + OpAMP is becoming the standard for agent fleets. Supporting it avoids rip-and-replace for OTel shops | Renderer and test matrix for two engines. Edge-side OTel pipelines support a subset of functions (filter, mask, route, enrich); OCSF mapping stays on Vector workers |
 | ADR-11 | Cost metering is built into the data plane from Phase 1, with a Git-versioned rate card | Cost reduction is the primary use case, and savings that can't be measured can't be defended to finance | Extra metrics cardinality. Mitigated by 5-minute buckets and by attributing per route, not per event |
 | ADR-19 | OpenTelemetry Collector for ingestion (OpAMP-managed), Vector for processing (see `mvp-scope.md`) | Widest open connector ecosystem, native fleet management, matches what customers run; VRL stays best for generated, testable parsing | Two engines; strict split between receive (OTel) and transform (Vector) |
-| ADR-20 | Declarative connector packages and generic engines (`object_storage`, `http_pull`, …) built as OTel receivers in the OSDF distribution (see `connectors-framework.md`) | Community can add sources without code; one fleet and health model | Core team owns the engines; L2/L3 code paths need sandboxing and review |
+| ADR-20 | Declarative connector packages and generic engines (`object_storage`, `http_pull`, …) built as OTel receivers in the Fibrik distribution (see `connectors-framework.md`) | Community can add sources without code; one fleet and health model | Core team owns the engines; L2/L3 code paths need sandboxing and review |
 | ADR-21 | LLMs (Gemini first-class, provider-agnostic) act as pipeline compilers and batch analysts, not per-event processors; template-level caching for long-tail logs (see `ai-data-optimization.md`) | Keeps transformation cost CPU-bound and deterministic while still letting AI design flows and remove unneeded storage | Runtime AI (mode D) is a budgeted exception only |
 | ADR-22 | $0 MVP on OCI Always Free ARM64 with a lean profile (no Kafka/Trino/Temporal/Keycloak) (see `zero-cost-mvp.md`) | Zero upfront cost; same chart as production via profiles | Small capacity (~5–20 GB/day); free-tier terms may change |
 | ADR-23 | Portability first: one Helm chart + multi-arch images on any conformant Kubernetes; only open interfaces between components; vendor services only as ingestion sources or optional add-ons (see `initial-stack.md`) | Moves between laptop, free VM and any cloud without code changes; avoids lock-in from day one | Gives up some free edge conveniences (Cloudflare Tunnel/Access) in the core |
 | ADR-12 | Split MCP servers by domain behind one gateway | Smaller tool sets per task (accuracy, tokens), independent scaling and permissions, one place for policy and audit | More deployables. The gateway and shared SDK keep them consistent |
-| ADR-13 | SOC procedures ship as Agent Skills (open `SKILL.md` format) inside packs | Know-how becomes versioned, testable, portable content that works in OSDF agents and external clients; progressive disclosure saves tokens | Skills are a new supply-chain/injection vector, so they get signing, review, sandboxed scripts and evals |
-| ADR-14 | External agents are first-class: same tools, identity model and policy as internal agents; A2A for delegation | This is the secondary use case. It avoids lock-in to OSDF's own agents, and customers can bring their own | A larger attack surface. Mitigated by gateway policy, tool pinning, scoped tokens and audit |
+| ADR-13 | SOC procedures ship as Agent Skills (open `SKILL.md` format) inside packs | Know-how becomes versioned, testable, portable content that works in Fibrik agents and external clients; progressive disclosure saves tokens | Skills are a new supply-chain/injection vector, so they get signing, review, sandboxed scripts and evals |
+| ADR-14 | External agents are first-class: same tools, identity model and policy as internal agents; A2A for delegation | This is the secondary use case. It avoids lock-in to Fibrik's own agents, and customers can bring their own | A larger attack surface. Mitigated by gateway policy, tool pinning, scoped tokens and audit |

@@ -1,4 +1,4 @@
-# Requirements: OpenSOC Data Fabric (OSDF)
+# Requirements: Fibrik
 
 > An open source, agentic platform for collecting and managing security data
 > and for building detections. It combines the pipeline and data management
@@ -32,10 +32,10 @@ Commercial tools solve parts of this problem:
 - **Anvilogic** separates detection logic from storage, compiles it to many
   query languages, and uses agents for onboarding, detection, search and triage.
 
-No open source project combines all of this. OSDF fills that gap.
+No open source project combines all of this. Fibrik fills that gap.
 
 All four vendors sell mainly on **cost reduction**: send less data to the
-SIEM, store the rest cheaply, and spend less engineering time. OSDF aims to
+SIEM, store the rest cheaply, and spend less engineering time. Fibrik aims to
 deliver those savings without adding a new commercial license, and to make
 every saving **measurable and attributable** to a source, route and destination.
 
@@ -52,17 +52,17 @@ covers:
 - **engineering labor**: onboarding sources, maintaining parsers, fixing
   drift, writing and tuning detections
 - **commercial pipeline-tool licenses** (Cribl, BindPlane, Databahn and similar),
-  which OSDF replaces with open source
+  which Fibrik replaces with open source
 
 Target: **≥ 40% lower total cost** versus the measured baseline for the
 pilot's data sources, with no loss of detection coverage (see §9). Every other
 goal must either support this objective or at least not raise cost.
 
 ### Secondary objective
-**GA: an agentic-native SOC data platform.** OSDF is designed for AI agents
+**GA: an agentic-native SOC data platform.** Fibrik is designed for AI agents
 to use as first-class consumers, alongside humans:
 
-- OSDF's own agents
+- Fibrik's own agents
 - the customer's own agents
 - third-party assistants and agent platforms (Claude, Copilot/Security
   Copilot, Gemini, Codex and others)
@@ -71,7 +71,7 @@ to use as first-class consumers, alongside humans:
 Concretely, every capability is exposed as **MCP servers and tools** that are
 designed for agents. SOC know-how is packaged as portable **Agent Skills**.
 Agents get their own identity, authorization, budgets and audit trail, and
-OSDF agents can work with external agents over **A2A**. OSDF's built-in agents
+Fibrik agents can work with external agents over **A2A**. Fibrik's built-in agents
 are reference implementations on this surface, not a closed feature. Where GA
 conflicts with G0, G0 wins. In practice they reinforce each other: agent-first
 tools, skills and result handles also cut token spend (NFR-COST-04).
@@ -93,7 +93,7 @@ tools, skills and result handles also cut token spend (NFR-COST-04).
    license. LLMs can be local open-weight models or any API (bring your own model).
 
 ### Non-goals (for v1)
-- Building a full SIEM UI to replace Splunk or Sentinel. OSDF feeds and
+- Building a full SIEM UI to replace Splunk or Sentinel. Fibrik feeds and
   augments them.
 - Building a full SOAR or case management system. Integrate with an existing
   one (DFIR-IRIS, Shuffle, or a ticketing system).
@@ -110,7 +110,7 @@ tools, skills and result handles also cut token spend (NFR-COST-04).
 | **Threat hunter** | Search hot and cold data across stores in one query; pivot quickly |
 | **SOC manager / CISO** | Cost per GB, coverage versus threats, MTTD/MTTR, agent accuracy, audit trail |
 | **AI agent (internal or external)** | A small, well-described, task-shaped tool surface; skills that teach the procedure; structured, paginated, token-bounded results; clear errors with fixes; scoped credentials; a way to ask a human for approval |
-| **Agent builder (customer/partner)** | Connect their own agent framework to OSDF over MCP/A2A; reuse and publish skills; test against eval sets; observe their agents' cost and actions |
+| **Agent builder (customer/partner)** | Connect their own agent framework to Fibrik over MCP/A2A; reuse and publish skills; test against eval sets; observe their agents' cost and actions |
 | **Platform admin** | Deploy, scale, upgrade, configure RBAC and secrets, and handle multi-tenancy (MSSP) |
 
 ---
@@ -270,15 +270,15 @@ full-pipeline blueprints; AI log-type identification and parser
 assignment; in-stream threat-intel enrichment; and a migration path from
 existing forwarders.
 
-**Design implication for OSDF:** BindPlane proves that OpAMP + the OTel
-Collector works as a vendor-neutral fleet model. OSDF should therefore treat the
+**Design implication for Fibrik:** BindPlane proves that OpAMP + the OTel
+Collector works as a vendor-neutral fleet model. Fibrik should therefore treat the
 **OTel Collector as a first-class edge runtime next to Vector** (FR-COL-08), so
-that fleets already standardized on OpenTelemetry can adopt OSDF without
+that fleets already standardized on OpenTelemetry can adopt Fibrik without
 replacing agents.
 
-### 4.5 Capability matrix → OSDF modules
+### 4.5 Capability matrix → Fibrik modules
 
-| Capability | Cribl | Databahn | Anvilogic | BindPlane | OSDF module |
+| Capability | Cribl | Databahn | Anvilogic | BindPlane | Fibrik module |
 |---|:-:|:-:|:-:|:-:|---|
 | Agent/edge collection + fleet management | ● | ● | ○ | ● | `collect` |
 | Agentless/API/cloud connectors | ● | ● | ○ | ● | `collect` |
@@ -324,8 +324,8 @@ the tests can trace back to it.
 | FR-CST-09 | **Budgets and alerts**: per source/destination daily volume and cost budgets, with alerts on overrun and on sudden growth (a cost anomaly) | P1 |
 | FR-CST-10 | **Chargeback/showback** per tenant, business unit or data owner | P2 |
 | FR-CST-11 | **Search in the lake instead of rehydration**: investigations run on lake data in place (Trino), and selective replay sends only the matching slice to the SIEM, never whole time ranges | P1 |
-| FR-CST-12 | **Platform cost visibility**: OSDF's own infrastructure cost (compute, Kafka, ClickHouse, object storage, LLM tokens) is shown next to the savings, so net savings are reported honestly | P1 |
-| FR-CST-13 | **Labor-cost metrics**: time to onboard a source, time to fix drift, and detection authoring time, measured from proposal timestamps and compared against the pre-OSDF baseline | P1 |
+| FR-CST-12 | **Platform cost visibility**: Fibrik's own infrastructure cost (compute, Kafka, ClickHouse, object storage, LLM tokens) is shown next to the savings, so net savings are reported honestly | P1 |
+| FR-CST-13 | **Labor-cost metrics**: time to onboard a source, time to fix drift, and detection authoring time, measured from proposal timestamps and compared against the pre-Fibrik baseline | P1 |
 | FR-CST-14 | **Cost-efficient storage formats**: Parquet with ZSTD, partition and sort settings tuned for compression, and automatic compaction. Ratios are reported per table | P0 |
 
 ### 5.1 Collection (`collect`)
@@ -340,9 +340,9 @@ the tests can trace back to it.
 | FR-COL-11 | **Cloud storage ingestion points**: AWS S3, Azure Blob/ADLS Gen2 and Google Cloud Storage via notifications (SQS / Event Grid / Pub/Sub) and backfill, with formats, checkpoints and cross-account identity (connectors-framework §5) | P0 |
 | FR-COL-06 | Tag every event at ingest with `source_id`, `tenant_id`, `collector_id`, receipt time and raw size | P0 |
 | FR-COL-07 | Buffer at the edge (disk) when downstream is unavailable | P1 |
-| FR-COL-08 | Support the **OpenTelemetry Collector** (upstream contrib or a custom OCB build) as an edge/gateway runtime alongside Vector, managed through the same OpAMP fleet manager. OSDF pipeline YAML can render to OTel Collector config (receivers/processors/exporters + OTTL) for edge-side filtering, masking and routing | P1 |
+| FR-COL-08 | Support the **OpenTelemetry Collector** (upstream contrib or a custom OCB build) as an edge/gateway runtime alongside Vector, managed through the same OpAMP fleet manager. Fibrik pipeline YAML can render to OTel Collector config (receivers/processors/exporters + OTTL) for edge-side filtering, masking and routing | P1 |
 | FR-COL-09 | **Staged rollouts** of fleet config and collector versions (canary → percentage → all), with automatic rollback on health regression and a full version history | P1 |
-| FR-COL-10 | **Forwarder migration helpers**: import existing configs (for example, Splunk UF inputs.conf, Fluent Bit, Logstash/Beats) into OSDF sources/routes as a proposal | P2 |
+| FR-COL-10 | **Forwarder migration helpers**: import existing configs (for example, Splunk UF inputs.conf, Fluent Bit, Logstash/Beats) into Fibrik sources/routes as a proposal | P2 |
 
 ### 5.2 Pipeline and routing (`pipeline`)
 
@@ -408,7 +408,7 @@ the tests can trace back to it.
 
 | ID | Requirement | Pri |
 |---|---|---|
-| FR-DET-01 | **Detection-as-code** in **Sigma** (YAML) with OSDF extensions: severity model, risk score, entity fields, correlation membership, tuning exceptions, test cases, data dependencies | P0 |
+| FR-DET-01 | **Detection-as-code** in **Sigma** (YAML) with Fibrik extensions: severity model, risk score, entity fields, correlation membership, tuning exceptions, test cases, data dependencies | P0 |
 | FR-DET-02 | **Compile** each rule to many backends with pySigma: ClickHouse SQL (P0), Trino/Iceberg SQL (P1), Splunk SPL, Sentinel KQL, Elastic ES\|QL/Lucene (P1). Unsupported constructs fail loudly | P0 |
 | FR-DET-03 | **Execution modes**: scheduled (SQL on hot store), streaming (per-event match in the pipeline for simple rules), and **deploy-to-SIEM** (push the compiled rule to an external SIEM via API) | P0 scheduled, P1 others |
 | FR-DET-04 | **Detection CI**: each rule has positive and negative test events. CI runs them on every change and blocks merge on failure | P0 |
@@ -442,7 +442,7 @@ results with each proposal.
 | FR-AGT-03 | **Drift remediation agent** | When drift is detected, diff the samples, propose a parser/mapping patch, re-run tests, and open a PR | P1 |
 | FR-AGT-04 | **Detection engineering agent** | Given CTI (URL, report or STIX) or a technique ID: extract TTPs, check coverage, draft Sigma rules with tests, compile them to the target backends, backtest on lake data (hit count and sample), and open a PR | P0 (basic), P1 (backtest) |
 | FR-AGT-05 | **Tuning agent** | Use triage outcomes to find noisy rules, propose exceptions or logic changes, and show the backtest before and after | P1 |
-| FR-AGT-06 | **Search agent** | Turn natural language into a query (SQL for OSDF and SPL/KQL for federated targets), explain the query, run it with guardrails, and summarize the results | P0 |
+| FR-AGT-06 | **Search agent** | Turn natural language into a query (SQL for Fibrik and SPL/KQL for federated targets), explain the query, run it with guardrails, and summarize the results | P0 |
 | FR-AGT-07 | **Triage agent** | For each alert: gather context (related events, entity history, asset/identity, TI), decide a verdict (benign / suspicious / malicious / needs-human), set a confidence and severity, write an evidence-backed summary, and recommend next steps. Write the outcome back as an alert annotation | P0 (basic), P1 (full) |
 | FR-AGT-08 | **Investigation agent** | Multi-step hunt from an alert or hypothesis. It builds a timeline and entity graph, produces a report, and can be resumed by a human | P2 |
 | FR-AGT-09 | **Blueprints** | Declarative workflows that chain agents and deterministic steps (for example, CTI ingest → detect agent → CI → human approval → deploy → monitor), with retries, timeouts and human-in-the-loop gates | P1 |
@@ -457,29 +457,29 @@ results with each proposal.
 | FR-API-01 | Every platform capability is reachable through a versioned REST/gRPC API (OpenAPI spec) | P0 |
 | FR-API-02 | **MCP servers** (split by domain, see §5.11) expose platform tools: `search`, `get_alert`, `list_sources`, `get_source_health`, `get_schema`, `test_pipeline`, `compile_rule`, `backtest_rule`, `coverage_for_technique`, `cost_report`, `simulate_pipeline`, `cost_check`, `propose_change`, and others | P0 |
 | FR-API-03 | MCP client support, so agents can call external MCP servers (ticketing, TI, cloud) through an allowlist | P1 |
-| FR-API-04 | A CLI (`osdf`) for GitOps workflows: validate, test, compile, deploy, replay | P0 |
+| FR-API-04 | A CLI (`fibrik`) for GitOps workflows: validate, test, compile, deploy, replay | P0 |
 | FR-API-05 | Webhook and Kafka outputs for alerts to SOAR and case management (DFIR-IRIS, Shuffle, Jira, ServiceNow) | P0 webhook, P1 others |
 
 ### 5.11 Agentic-native platform: MCP servers, skills and tools (secondary use case)
 
 | ID | Requirement | Pri |
 |---|---|---|
-| FR-AGN-01 | **Domain-split MCP servers** instead of one monolith: `osdf-data` (search, schema, lake, result handles), `osdf-pipeline` (sources, routes, test, simulate, propose), `osdf-detect` (rules, compile, test, backtest, coverage), `osdf-alerts` (alerts, context, triage write-back, feedback), `osdf-cost` (ledger, savings, cost check), `osdf-admin` (restricted: fleet, deployments). Each server can be deployed, scaled, permissioned and versioned on its own | P0 (data, alerts, detect, cost), P1 (others) |
+| FR-AGN-01 | **Domain-split MCP servers** instead of one monolith: `fibrik-data` (search, schema, lake, result handles), `fibrik-pipeline` (sources, routes, test, simulate, propose), `fibrik-detect` (rules, compile, test, backtest, coverage), `fibrik-alerts` (alerts, context, triage write-back, feedback), `fibrik-cost` (ledger, savings, cost check), `fibrik-admin` (restricted: fleet, deployments). Each server can be deployed, scaled, permissioned and versioned on its own | P0 (data, alerts, detect, cost), P1 (others) |
 | FR-AGN-02 | Implement the **current MCP specification** (2026-07-28 at the time of writing): stateless servers behind standard HTTP load balancing, the extensions framework, hardened OAuth authorization. Pin the protocol version and test SDK compatibility in CI. Keep stdio transport for local/dev use | P0 |
 | FR-AGN-03 | **Long-running operations** (backtests, replays, simulations, large hunts) run as asynchronous MCP tasks (or a job handle plus polling where a client lacks support). They are backed by Temporal and resumable | P1 |
 | FR-AGN-04 | **Human approval inside the agent loop**: tools that need a human decision (deploy, auto-close, large replay) ask through the MCP client (elicitation) when the client supports it. Otherwise they return `approval_required` with a link to the proposal | P1 |
 | FR-AGN-05 | **Agent-first tool design** (see architecture §8.8). Task-shaped tools; JSON-schema inputs and structured outputs; descriptions that state when to use and when not to use each tool; pagination plus `max_tokens`/`max_rows` limits; **result handles** for large result sets; `dry_run` on every write; idempotency keys; errors that name a fix | P0 |
 | FR-AGN-06 | **MCP resources** for read-mostly context: OCSF class "schema cards" (fields, descriptions, example values, query snippets), source catalog entries, detection docs, ATT&CK techniques, runbooks. Subscriptions or notifications fire on new alerts, drift events and deployments, so agents can react | P1 |
 | FR-AGN-07 | **MCP prompts** for common entry points (for example, `/triage <alert>`, `/onboard <sample>`, `/reduce-cost <source>`, `/hunt <technique>`) | P1 |
-| FR-AGN-08 | **Agent Skills library**: SOC procedures packaged as `SKILL.md` folders (open Agent Skills format) with scripts, templates and reference files. Examples: onboarding a source, OCSF mapping, Sigma authoring, cost reduction review, triage playbooks per alert family, hunts per ATT&CK tactic, and incident write-ups. Skills reference OSDF MCP tools by name and load by progressive disclosure | P0 (5 skills), P1 (library) |
-| FR-AGN-09 | **Skills as content**: skills live in `osdf-content` Git, ship inside packs, are versioned and signed, and pass CI (lint, script sandbox tests, and evals showing the skill improves task success). They are distributed to OSDF agents and exportable to any skills-compatible client | P1 |
-| FR-AGN-10 | **Code-execution mode**: a typed `osdf` Python SDK, generated from the same tool schemas, runs in the validator sandbox. Agents can filter and join large results in code instead of passing rows through the model context. Network-less, time- and memory-limited | P1 |
+| FR-AGN-08 | **Agent Skills library**: SOC procedures packaged as `SKILL.md` folders (open Agent Skills format) with scripts, templates and reference files. Examples: onboarding a source, OCSF mapping, Sigma authoring, cost reduction review, triage playbooks per alert family, hunts per ATT&CK tactic, and incident write-ups. Skills reference Fibrik MCP tools by name and load by progressive disclosure | P0 (5 skills), P1 (library) |
+| FR-AGN-09 | **Skills as content**: skills live in `fibrik-content` Git, ship inside packs, are versioned and signed, and pass CI (lint, script sandbox tests, and evals showing the skill improves task success). They are distributed to Fibrik agents and exportable to any skills-compatible client | P1 |
+| FR-AGN-10 | **Code-execution mode**: a typed `fibrik` Python SDK, generated from the same tool schemas, runs in the validator sandbox. Agents can filter and join large results in code instead of passing rows through the model context. Network-less, time- and memory-limited | P1 |
 | FR-AGN-11 | **Tool discovery at scale**: support clients that use tool search / deferred loading. Keep each server's tool count small (≤ 15–20). Publish a catalog of all tools and skills, with descriptions and examples | P1 |
-| FR-AGN-12 | **MCP gateway**: one governed entry point for all OSDF MCP servers *and* allowlisted third-party servers (for example, a SIEM vendor's MCP server, EDR, ticketing, TI). It handles authentication, per-tool authorization (OPA), rate limits, token/cost budgets, audit, tool-definition pinning (hash) to stop silent tool changes, and output sanitization | P0 (OSDF servers), P1 (third-party) |
+| FR-AGN-12 | **MCP gateway**: one governed entry point for all Fibrik MCP servers *and* allowlisted third-party servers (for example, a SIEM vendor's MCP server, EDR, ticketing, TI). It handles authentication, per-tool authorization (OPA), rate limits, token/cost budgets, audit, tool-definition pinning (hash) to stop silent tool changes, and output sanitization | P0 (Fibrik servers), P1 (third-party) |
 | FR-AGN-13 | **Agent identity**: every agent, internal or external, has its own OAuth client or workload identity. Tokens are audience-bound per MCP server, scoped to tenant, tools and autonomy level, and short-lived. Agents never reuse a human's session | P0 |
-| FR-AGN-14 | **A2A interoperability**: OSDF agents (triage, onboarding, cost optimization, detection) are published as A2A agents with signed agent cards, so external orchestrators can delegate to them. Blueprints can delegate steps to allowlisted external A2A agents | P2 |
+| FR-AGN-14 | **A2A interoperability**: Fibrik agents (triage, onboarding, cost optimization, detection) are published as A2A agents with signed agent cards, so external orchestrators can delegate to them. Blueprints can delegate steps to allowlisted external A2A agents | P2 |
 | FR-AGN-15 | **Agent observability and cost**: per-agent and per-tool traces (OpenTelemetry GenAI semantic conventions plus Langfuse), token and tool-call cost written to the `cost_ledger`, and tool-level success and error rates | P0 |
-| FR-AGN-16 | **Tool and skill evals**: eval suites check that agents pick the right tool and skill, call it with valid arguments and finish the task. They run per model and per client (OSDF agents, Claude, other MCP clients) and gate CI | P1 |
+| FR-AGN-16 | **Tool and skill evals**: eval suites check that agents pick the right tool and skill, call it with valid arguments and finish the task. They run per model and per client (Fibrik agents, Claude, other MCP clients) and gate CI | P1 |
 | FR-AGN-17 | **Bring-your-own-agent conformance**: a documented contract and test kit so that a customer's agent framework can connect, authenticate, discover tools and skills, and pass a reference task suite | P2 |
 
 ### 5.12 UI
@@ -513,7 +513,7 @@ results with each proposal.
 | NFR-AI-01 | Agent safety | Agents run with scoped tool permissions; no free-form shell or network access; changes only through proposals; prompt-injection defences on all data-derived content (log data is untrusted input) |
 | NFR-AI-02 | Data residency | Option to run fully air-gapped with local models. PII is masked before any data goes to an external LLM (configurable policy) |
 | NFR-AI-05 | MCP security | Follow the NSA MCP security design guidance (May 2026) and the OWASP Top 10 for Agentic Applications: least-privilege tool scopes, approval gates for consequential actions, input/output screening, pinned tool definitions, full audit of tool calls. Third-party MCP servers and skills are treated as supply-chain dependencies (review, pin, scan) |
-| NFR-AI-06 | Context efficiency | Tool responses default to a token-bounded size (for example, ≤ 4k tokens) with handles for the rest. Total tool-definition load of the default OSDF agent set stays ≤ 10k tokens through domain split and deferred loading |
+| NFR-AI-06 | Context efficiency | Tool responses default to a token-bounded size (for example, ≤ 4k tokens) with handles for the rest. Total tool-definition load of the default Fibrik agent set stays ≤ 10k tokens through domain split and deferred loading |
 | NFR-AI-03 | Observability | Every LLM call is traced (prompt, tools, tokens, latency, cost, model) and linked to the agent run and the proposal |
 | NFR-AI-04 | Determinism | Agent output that becomes config is always validated by deterministic tests before a human sees it |
 | NFR-TEN-01 | Multi-tenancy | Logical tenant isolation (tenant_id on every record, per-tenant tables/partitions, RBAC). MSSP mode with tenant-scoped content packs |
@@ -521,7 +521,7 @@ results with each proposal.
 | NFR-OPS-02 | Observability | All services emit OpenTelemetry metrics, logs and traces. A Grafana dashboard ships for each component |
 | NFR-OPS-03 | Upgrades | Rolling upgrades of the data plane with no data loss. Config schema migrations are versioned |
 | NFR-OPS-04 | GitOps | All config (pipelines, routes, detections, packs, blueprints) lives in Git. The UI is a Git client. Drift between Git and runtime is detected |
-| NFR-LIC-01 | Licensing | Runtime dependencies use OSI-approved licenses (Apache-2.0, MIT, BSD, MPL-2.0, LGPL, AGPL/GPL acceptable for separate services). No source-available or BSL/SSPL components on the default path. OSDF code itself is Apache-2.0 |
+| NFR-LIC-01 | Licensing | Runtime dependencies use OSI-approved licenses (Apache-2.0, MIT, BSD, MPL-2.0, LGPL, AGPL/GPL acceptable for separate services). No source-available or BSL/SSPL components on the default path. Fibrik code itself is Apache-2.0 |
 | NFR-COST-01 | Efficiency | Cost/GB targets: lake storage ≤ object storage cost plus about 10% compute overhead. Documented sizing guide |
 | NFR-COST-02 | Transformation efficiency | Pipeline compute ≤ 1 vCPU per 5k EPS for parse + OCSF map + 2 destinations (sustained). Measured and published per pack |
 | NFR-COST-03 | No LLM in the per-event path (by default) | Exception: an opt-in, rate-capped, budgeted runtime AI step on low-volume routes only (ai-data-optimization.md, mode D). LLMs run only at design time (generating parsers, rules and reductions) and per alert or question, never per event. Runtime transformation is deterministic VRL/OTTL. This keeps transformation cost linear in CPU and not in tokens |
@@ -533,8 +533,8 @@ results with each proposal.
 ## 7. Data and content standards
 
 - **Schema:** OCSF (current stable 1.x). Store the `ocsf_version` on every event.
-- **Detections:** Sigma rules spec v2 + Sigma correlation rules + OSDF
-  extension fields under `x-osdf`.
+- **Detections:** Sigma rules spec v2 + Sigma correlation rules + Fibrik
+  extension fields under `x-fibrik`.
 - **Threat intel:** STIX 2.1 / TAXII 2.1. MITRE ATT&CK through its STIX bundle.
 - **Telemetry:** OpenTelemetry (OTLP) for platform self-observability and
   as a log ingest protocol.
@@ -562,8 +562,8 @@ The MVP is done when, on one machine with `docker compose up`:
    Security events as JSON, AWS CloudTrail) into **OCSF**, and writes to
    **ClickHouse** (hot) and **Iceberg on S3-compatible storage**
    (bronze/gold).
-2. Pipelines, routes and parsers are YAML in Git. `osdf test` runs the
-   fixtures, and `osdf deploy` hot-reloads the workers.
+2. Pipelines, routes and parsers are YAML in Git. `fibrik test` runs the
+   fixtures, and `fibrik deploy` hot-reloads the workers.
 3. At least **10 Sigma rules** compile to ClickHouse SQL, pass CI tests, run on
    a schedule, and write alerts to an `alerts` table plus a webhook.
 4. The **onboarding agent** takes a sample of a new log type and opens a PR with a
@@ -574,8 +574,8 @@ The MVP is done when, on one machine with `docker compose up`:
    and evidence. An analyst can mark agree/disagree in a minimal UI.
 7. The **search agent** answers natural-language questions with SQL over hot
    and warm data.
-8. **Domain MCP servers** (`osdf-data`, `osdf-alerts`, `osdf-detect`,
-   `osdf-cost`) expose the tools above through the **MCP gateway** with
+8. **Domain MCP servers** (`fibrik-data`, `fibrik-alerts`, `fibrik-detect`,
+   `fibrik-cost`) expose the tools above through the **MCP gateway** with
    per-agent identity and audit. **Five Agent Skills** ship in a pack. An
    **external MCP client** completes a triage task and a cost-review task using
    them. An eval harness reports accuracy per agent.
@@ -593,7 +593,7 @@ The MVP is done when, on one machine with `docker compose up`:
 |---|---|---|
 | Time to onboard a new standard log source | < 1 hour with the agent | < 15 min |
 | Agent-generated parser passes tests on first PR | ≥ 60% | ≥ 85% |
-| **Total cost of security data management vs baseline** (SIEM ingest + storage + pipeline compute + pipeline licenses + OSDF's own infra) | ≥ 25% lower on pilot sources | **≥ 40% lower** |
+| **Total cost of security data management vs baseline** (SIEM ingest + storage + pipeline compute + pipeline licenses + Fibrik's own infra) | ≥ 25% lower on pilot sources | **≥ 40% lower** |
 | SIEM-bound volume reduction on reference dataset | ≥ 30% | ≥ 50% |
 | Detection coverage lost because of reduction | 0 techniques | 0 techniques |
 | Storage compression ratio (raw text → Parquet/ZSTD) | ≥ 8× | ≥ 12× |

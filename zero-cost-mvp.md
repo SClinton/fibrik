@@ -6,7 +6,7 @@
 
 ## 1. Goal and ground rules
 
-**Goal:** build, demo and run a design-partner pilot of the OSDF MVP with
+**Goal:** build, demo and run a design-partner pilot of the Fibrik MVP with
 **$0 upfront cost and $0 running cost**, using only open source software
 and free tiers. A small, explicit upgrade path covers growth beyond them.
 
@@ -45,13 +45,13 @@ sources** (S3, Blob, GCS connectors) within their free allowances, which
 also proves the multi-cloud storage connectors at $0.
 
 Consequences:
-- **ARM64-first images.** Every OSDF image is built multi-arch (arm64 +
+- **ARM64-first images.** Every Fibrik image is built multi-arch (arm64 +
   amd64). Check that the third-party images used are available for arm64:
   OTel Collector, Vector, ClickHouse, Postgres, Lakekeeper and Caddy all have
   arm64 builds, but confirm each pinned tag.
 - **Idle reclamation.** OCI may reclaim Always Free VMs that stay under 20%
   CPU, network *and* (for A1) memory at the 95th percentile over 7 days. A
-  running OSDF stack uses well over 20% memory, but monitor it. Upgrading the
+  running Fibrik stack uses well over 20% memory, but monitor it. Upgrading the
   tenancy to pay-as-you-go removes reclamation and keeps Always Free resources
   free. It also needs a card, so add a $1 budget alert first.
 - **Capacity.** A1 capacity is sometimes unavailable in popular regions.
@@ -73,12 +73,12 @@ heavy ones are tuned for low memory. The profile is `values-free.yaml` (Helm) /
 | ClickHouse | `max_server_memory_usage` ≈ 2.5 GB, small caches, TTL 7 days | ~2.5 GB |
 | PostgreSQL (control plane + Iceberg catalog) | `shared_buffers` 128 MB | ~0.4 GB |
 | Lakekeeper (Iceberg REST catalog) | Shares Postgres | ~0.2 GB |
-| Lake writer | Inside the osdf-worker process (pyiceberg micro-batches) | (shared) |
-| osdf-api + MCP servers + agents | One Python process group (uvicorn workers), split into separate deployments only in the standard profile | ~1.2 GB |
+| Lake writer | Inside the fibrik-worker process (pyiceberg micro-batches) | (shared) |
+| fibrik-api + MCP servers + agents | One Python process group (uvicorn workers), split into separate deployments only in the standard profile | ~1.2 GB |
 | UI | Static build served by Caddy (also TLS/reverse proxy) | ~0.05 GB |
 | Search over the lake | ClickHouse Iceberg table functions (no Trino) | (in ClickHouse) |
 | Scheduler/jobs | APScheduler + Postgres job table (no Temporal) | (shared) |
-| Self-monitoring | VictoriaMetrics single-node + vmagent (lighter than Prometheus) and the OSDF UI health pages. Grafana optional | ~0.4 GB |
+| Self-monitoring | VictoriaMetrics single-node + vmagent (lighter than Prometheus) and the Fibrik UI health pages. Grafana optional | ~0.4 GB |
 | Auth | Built-in local users + OIDC login via free providers (GitHub, Google). No Keycloak in the lean profile | (shared) |
 | Content Git | A free GitHub repo (or local bare repo), with no Gitea in the lean profile | 0 |
 | Ingress | **Cloudflare Tunnel** (free), so no public IP or open ports are needed; Cloudflare Access for SSO; UI optionally served from Cloudflare Pages (§4a) | ~0.05 GB |
@@ -146,7 +146,7 @@ flowchart LR
   end
   subgraph OCI[OCI Always Free ARM64 - k3s]
     OT[OTel gateway] --> V[Vector] --> CH[(ClickHouse)]
-    API[osdf-api • MCP • agents]
+    API[fibrik-api • MCP • agents]
     OBJ[object_storage connector]
   end
   SaaS[SaaS webhooks / HTTP sources] --> WK --> R2
@@ -158,15 +158,15 @@ flowchart LR
   API -. optional .-> WAI
 ```
 
-| Service | Role in OSDF | Free allowance (verify at sign-up) | Limits that shape the design |
+| Service | Role in Fibrik | Free allowance (verify at sign-up) | Limits that shape the design |
 |---|---|---|---|
 | **GitHub Pages** | Project website, documentation, **connector catalog browser** (generated from the registry repo), Storybook, a clickable **demo of the UI with mock data** | 1 GB site, ~100 GB/month soft bandwidth; builds via Actions | **Not for the product UI or anything SaaS-like** (GitHub terms). Static only |
 | **Cloudflare Pages** | Hosts the **product UI** (React static build), so it loads even when the OCI VM is busy or down; preview deployments per PR | Free static hosting | Static only. The data API stays on OCI behind Access + Tunnel |
 | **Cloudflare Workers** | (1) **Webhook / HTTP ingestion endpoint**: verify signatures, add the ingest envelope, batch to R2 as NDJSON. (2) **Edge API router**: checks the Access JWT, rate-limits, and forwards to the Tunnel. (3) **Connector registry index API** for the in-product catalog. (4) Cron Triggers for tiny housekeeping jobs | ~100k requests/day | Very small CPU time per request (milliseconds), so no parsing at the edge, only validate and batch. Request volume suits SaaS webhooks, not syslog/firewall streams |
 | **R2** | Landing bucket for edge ingestion; **lake/archive overflow** with **zero egress fees** (also cheap to read from any cloud later) | ~10 GB storage + monthly operation allowances | Small. Lake retention planning must count R2 + OCI object storage together |
 | **R2 Data Catalog** (optional) | Managed **Iceberg REST catalog** for tables on R2, which could replace Lakekeeper in the lean profile (saves memory and a component) | Pricing announced May 2026 with a monthly free tier (1M catalog operations, 10 GB compaction); billing not yet enabled at the time of writing | Leave automatic compaction off, or within the free tier. Keep the catalog pluggable (saas doc FR-OFF-02) |
-| **Queues** (optional) | Decouple Worker ingest from R2 writes, and R2 event notifications → OSDF | Reportedly added to the Workers free plan in 2026; confirm the allowance | Polling R2 listings works if Queues isn't available |
-| **Access / Zero Trust** | SSO and device posture in front of the UI and API, with no IdP to run | Free for small teams (up to ~50 users) | Use OIDC in OSDF as well, so access doesn't depend on Cloudflare |
+| **Queues** (optional) | Decouple Worker ingest from R2 writes, and R2 event notifications → Fibrik | Reportedly added to the Workers free plan in 2026; confirm the allowance | Polling R2 listings works if Queues isn't available |
+| **Access / Zero Trust** | SSO and device posture in front of the UI and API, with no IdP to run | Free for small teams (up to ~50 users) | Use OIDC in Fibrik as well, so access doesn't depend on Cloudflare |
 | **Tunnel** | Ingress to OCI with no public IP and no open ports | Free | — |
 | **Workers AI** (optional) | Small-model provider for low-stakes tasks (template labeling drafts, summaries) behind the LLM gateway | Daily free allocation on select models | Check its data-use terms and set the provider's `trains_on_input` flag accordingly |
 | **D1 / KV / Durable Objects** | Not used for core state (Postgres on OCI stays the system of record) | — | D1's free plan enforces daily row limits from September 2026; avoid it for core state |
@@ -196,7 +196,7 @@ option for operator monitoring instead of self-hosted VictoriaMetrics).
 | FR-EDGE-01 | Product UI deployable as a static app on Cloudflare Pages (API base URL configurable) | Must |
 | FR-EDGE-02 | Project site, docs, connector catalog browser and mock-data demo on GitHub Pages, built by Actions | Must |
 | FR-EDGE-03 | Worker-based webhook/HTTP ingest → R2 NDJSON batches → `object_storage` connector (R2 as an S3-compatible source) | Should |
-| FR-EDGE-04 | Cloudflare Tunnel + Access in front of the OCI deployment (with OSDF's own OIDC still enforced) | Must |
+| FR-EDGE-04 | Cloudflare Tunnel + Access in front of the OCI deployment (with Fibrik's own OIDC still enforced) | Must |
 | FR-EDGE-05 | R2 as an additional lake/archive bucket; R2 Data Catalog as an optional Iceberg catalog | Should |
 | FR-EDGE-06 | Workers AI as an optional LLM provider behind the gateway, with a data-use flag | Post |
 | FR-EDGE-07 | Every edge component is optional; the platform runs without Cloudflare | Must |
@@ -223,7 +223,7 @@ cloud's free outbound allowance. At MVP test volumes, that's a few hundred MB.
 |---|---|
 | Hosting decision (mvp-scope §1) | **OCI Always Free ARM64 + k3s** is the single platform; Mac mini for dev/demo |
 | Message bus | Optional. The lean profile uses OTLP + disk queues. The bus interface stays, so Kafka can return in the standard profile without changing connectors or pipelines |
-| Trino, Temporal, Keycloak, Gitea, Langfuse, Grafana | Off in the lean profile; replaced by ClickHouse Iceberg functions, APScheduler, built-in auth + free OIDC, GitHub, OTel GenAI traces stored in ClickHouse, and OSDF UI health pages. Each one is a profile switch |
+| Trino, Temporal, Keycloak, Gitea, Langfuse, Grafana | Off in the lean profile; replaced by ClickHouse Iceberg functions, APScheduler, built-in auth + free OIDC, GitHub, OTel GenAI traces stored in ClickHouse, and Fibrik UI health pages. Each one is a profile switch |
 | Performance target (NFR-PERF-01) | MVP target on the lean profile: **≥ 2k EPS sustained / ~5–20 GB/day**, benchmarked in week 3. The standard profile keeps the original targets |
 | Agents | LLM via the in-process LiteLLM SDK. A per-provider data-use policy flag in Settings blocks real data from going to "trains-on-input" providers |
 | Images | Multi-arch from day one |
