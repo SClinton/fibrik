@@ -32,6 +32,12 @@
    and tests.
 7. **Log data is untrusted input.** Anything derived from events and given to
    an LLM is treated as possible prompt injection (see §8.4).
+8. **Agentic-native by design** (secondary use case, requirements GA). Every
+   capability is exposed as **MCP tools** designed for agents, and SOC
+   procedures ship as **Agent Skills**. External agents are first-class
+   consumers alongside OSDF's own agents, and they share the same identity,
+   policy, budget and audit controls. The OSDF UI and CLI use the same API
+   underneath, so agents and humans see one platform (§8.6–§8.11).
 
 ---
 
@@ -120,7 +126,8 @@ flowchart TB
 
   subgraph AI[Agent Layer]
     ORCH[Agent runtime - LangGraph in Temporal activities]
-    MCPS[OSDF MCP server]
+    MCPS[MCP gateway + domain MCP servers]
+    SKL[Skills registry - SKILL.md in Git]
     GW[LLM gateway - LiteLLM]
     EVAL[Eval harness + Langfuse tracing]
     VAL[Validator sandbox]
@@ -140,6 +147,8 @@ flowchart TB
   FLEET <--> SIDE
   CFG --> FLEET
   ORCH <--> MCPS --> API
+  ORCH --> SKL
+  EXTA[External agents - Claude, Copilot, customer agents] <--> MCPS
   ORCH --> GW
   ORCH --> VAL
   SCHED --> ORCH & DETX & HEALTH
@@ -167,7 +176,10 @@ flowchart TB
 | Health & drift | Silence, volume, schema drift, data-quality score | Python + ClickHouse aggregates, Prometheus metrics | FR-HLT-* |
 | Graph | Source↔field↔detection↔ATT&CK↔CTI, plus embeddings for retrieval | PostgreSQL + Apache AGE + pgvector | FR-GRF-* |
 | Agent runtime | Agent graphs, tools, memory, human-in-the-loop | LangGraph (Python), run inside Temporal workflows | FR-AGT-* |
-| MCP server | Exposes platform tools to OSDF agents *and* external clients (Claude, IDEs) | Python MCP SDK | FR-API-02 |
+| MCP servers | Domain-split servers (`osdf-data`, `-pipeline`, `-detect`, `-alerts`, `-cost`, `-admin`) expose tools, resources and prompts to OSDF agents *and* external clients | Python MCP SDK (stateless HTTP) | FR-API-02, FR-AGN-01..07 |
+| MCP gateway | One governed entry point: OAuth, OPA per-tool policy, budgets, audit, tool pinning, third-party server allowlist | LiteLLM MCP gateway or a thin custom gateway (evaluate open source gateways) + OPA | FR-AGN-12/13 |
+| Skills registry | Versioned, signed `SKILL.md` skills from `osdf-content` packs; served to OSDF agents and exportable to other clients | Git + OCI artifact + MCP resources | FR-AGN-08/09 |
+| A2A endpoint (P2) | Publishes OSDF agents with signed agent cards; delegates blueprint steps to external agents | A2A SDK | FR-AGN-14 |
 | LLM gateway | Model routing, fallback, budgets, PII redaction before egress | LiteLLM proxy; vLLM or Ollama for local models | FR-AGT-12, NFR-AI-02 |
 | Validator sandbox | Runs untrusted generated artifacts (VRL tests, SQL dry runs, Sigma compile) in isolated, network-less containers | gVisor/Kata or plain rootless containers with no network; `vector test`, ClickHouse `EXPLAIN` | NFR-AI-01/04 |
 | Observability | Self-telemetry, dashboards, LLM tracing | OpenTelemetry, Prometheus, Grafana, Langfuse | NFR-OPS-02, NFR-AI-03 |
@@ -196,7 +208,10 @@ flowchart TB
 | Streaming state (P2) | **Apache Flink** | Apache-2.0 | Arroyo (Apache-2.0/MIT) |
 | Workflow/durable execution | **Temporal** | MIT | Apache Airflow for batch-only; Hatchet (MIT) |
 | Agent framework | **LangGraph** | MIT | PydanticAI (MIT), Claude Agent SDK (via the gateway); keep agents framework-agnostic behind an interface |
-| Agent tool protocol | **MCP** (Python SDK) | MIT | — |
+| Agent tool protocol | **MCP** (official Python SDK; TypeScript SDK for UI/MCP Apps) | MIT | Pin the spec revision (2026-07-28 at the time of writing) |
+| Agent procedures | **Agent Skills** (`SKILL.md`, agentskills.io format) | Open spec | Skills are plain folders, so any skills-compatible client can load them |
+| Agent-to-agent | **A2A** protocol SDKs (Linux Foundation) | Apache-2.0 | P2. Use only for delegation across products or organizations |
+| Agent telemetry | **OpenTelemetry GenAI semantic conventions** → Langfuse/Grafana | Apache-2.0 | — |
 | LLM gateway | **LiteLLM** proxy | MIT (core) | Direct SDKs |
 | Local model serving | **vLLM** / **Ollama** | Apache-2.0 / MIT | Use open-weight models with good tool use; benchmark them with the eval harness |
 | LLM tracing/evals | **Langfuse** | MIT (core) | Arize Phoenix (ELv2, not OSI, avoid), OpenLLMetry (Apache-2.0) |
@@ -504,8 +519,10 @@ flowchart LR
   T[Trigger<br/>UI / chat / schedule / event] --> WF[Temporal workflow<br/>Blueprint]
   WF --> A[Agent activity<br/>LangGraph graph]
   A <--> TOOLS[MCP client]
-  TOOLS <--> MCP[OSDF MCP server]
-  TOOLS <--> EXT[Allowlisted external MCP servers]
+  A --> SK[Skills<br/>loaded on demand]
+  TOOLS <--> MGW[MCP gateway<br/>authN, OPA, budgets, audit]
+  MGW <--> MCP[OSDF domain MCP servers]
+  MGW <--> EXT[Allowlisted external MCP servers]
   A <--> GW[LLM gateway]
   A --> VAL[Validator sandbox]
   A --> PROP[Change proposal<br/>Git branch + PR]
@@ -573,6 +590,217 @@ policies enforce the levels.
 - Evals run in CI on every prompt, model or agent change. The results go to
   Langfuse datasets, with a regression gate.
 
+### 8.6 Agentic-native platform overview (secondary use case)
+
+OSDF treats agents as a primary interface, not an add-on. The platform's
+"agent surface" has four parts:
+
+```mermaid
+flowchart TB
+  subgraph Clients[Agent clients]
+    OA[OSDF agents<br/>LangGraph + Temporal]
+    XA[External assistants<br/>Claude, Copilot, Gemini, Codex]
+    CA[Customer agent frameworks]
+    VA[Vendor agents<br/>via A2A]
+  end
+  subgraph Surface[OSDF agent surface]
+    GW[MCP gateway<br/>OAuth • OPA • budgets • audit • tool pinning]
+    A2A[A2A endpoint<br/>signed agent cards]
+    subgraph Servers[Domain MCP servers]
+      D[osdf-data]
+      P[osdf-pipeline]
+      DT[osdf-detect]
+      AL[osdf-alerts]
+      C[osdf-cost]
+      AD[osdf-admin]
+    end
+    SK[Skills registry<br/>SKILL.md packs]
+    SDK[Code-execution sandbox<br/>typed osdf SDK]
+  end
+  subgraph Core[OSDF core]
+    API[osdf-api] --- CH[(ClickHouse)] --- ICE[(Iceberg)]
+    API --- GIT[(Content Git)]
+    API --- TMP[Temporal]
+  end
+  OA & XA & CA --> GW
+  VA <--> A2A --> OA
+  GW --> Servers
+  OA & XA & CA -. load .-> SK
+  OA --> SDK --> GW
+  Servers --> API
+  EXT3[Third-party MCP servers<br/>SIEM, EDR, ticketing, TI] <--> GW
+```
+
+| Part | What it is | Why it matters |
+|---|---|---|
+| **MCP servers** | Domain-split servers with tools, resources and prompts | A small, focused tool surface per task; independent scaling, permissions and versioning |
+| **Skills** | Portable SOC procedures (`SKILL.md` + scripts + references) | Teaches *how* to do SOC work with the tools. Loaded by progressive disclosure, so context stays small |
+| **Tools** | Task-shaped operations with structured I/O, designed for agents | Higher task success, fewer tokens, safer writes |
+| **Gateway + identity** | One governed path for every agent call | Consistent policy, budgets and audit for internal and external agents |
+
+### 8.7 MCP server topology
+
+| Server | Tools (examples) | Resources | Prompts | Default scope |
+|---|---|---|---|---|
+| `osdf-data` | `search_sql`, `search_federated`, `get_result_page`, `summarize_result`, `explain_query`, `list_tables` | `schema://ocsf/<class>` schema cards, `catalog://sources/<id>` | `/hunt` | read |
+| `osdf-pipeline` | `list_sources`, `sample_source`, `test_pipeline`, `simulate_pipeline`, `validate_ocsf`, `propose_change` | `pack://<name>`, `pipeline://<id>` | `/onboard` | read + propose |
+| `osdf-detect` | `search_rules`, `compile_rule`, `test_rule`, `backtest_rule` (task), `coverage_for_technique`, `rule_health` | `rule://<id>`, `attack://<technique>` | `/write-detection` | read + propose |
+| `osdf-alerts` | `list_alerts`, `get_alert_context`, `entity_history`, `similar_alerts`, `annotate_alert`, `record_verdict` | `alert://<id>` (subscribable) | `/triage` | read + annotate |
+| `osdf-cost` | `cost_report`, `top_cost_sources`, `field_usage`, `cost_check`, `savings_since` | `rates://<env>` | `/reduce-cost` | read |
+| `osdf-admin` | `deployments`, `fleet_status`, `rollback` (approval required) | — | — | admin only, never granted to agents by default |
+
+Implementation notes:
+- **Spec revision.** Build on the current MCP revision (2026-07-28 at the time
+  of writing), which has a stateless protocol core. Servers run as ordinary
+  stateless HTTP services behind the gateway and scale horizontally. Any state
+  lives in OSDF (result handles in ClickHouse, jobs in Temporal), not in MCP
+  sessions. Verify the exact features against the final spec text before
+  implementation.
+- **Long-running operations** such as `backtest_rule`, `replay` and
+  `simulate_pipeline` on large samples start a Temporal workflow and return a
+  task/job handle that the client polls or awaits. They use MCP's
+  asynchronous task mechanism where the client supports it.
+- **Human approval** for consequential tools uses MCP elicitation, so the
+  human answers inside their own agent client, or returns
+  `approval_required` + proposal URL. Either way, the approval is recorded in
+  the audit log against the agent identity.
+- **Same backend for UI and agents.** Tools are thin adapters over `osdf-api`,
+  so there is one implementation of business logic and RBAC.
+
+### 8.8 Tool design principles (agent-first)
+
+1. **Task-shaped, not CRUD-shaped.** `get_alert_context(alert_id)` returns the
+   alert plus related events, entities, asset/identity facts and similar past
+   verdicts in one call, instead of making the agent chain eight REST calls.
+2. **Descriptions are prompts.** Each tool states its purpose, when to use it,
+   when *not* to use it, its cost (for example, "scans up to N GB"), and an
+   example call. Descriptions are versioned and evaluated like code.
+3. **Structured output.** Every tool declares an output schema. Results include
+   `ids` the agent can cite (event IDs, rule IDs), which triage evidence
+   validation requires (§8.4).
+4. **Token-bounded by default.** Responses stay within a default budget (NFR-AI-06).
+   Large results are stored server-side and returned as a **result handle**
+   with a summary, row count, schema and the first page. The agent then calls
+   `get_result_page`, `summarize_result`, or works on the handle in the
+   code-execution sandbox.
+5. **Safe writes.** Writes are proposals by default, with `dry_run=true` as the
+   default, idempotency keys, and a diff in the response.
+6. **Actionable errors.** Errors say what was wrong and how to fix it (for
+   example, "field `src_ip` is not in OCSF class 3002; did you mean
+   `src_endpoint.ip`?"). This removes whole retry loops.
+7. **Small tool sets.** ≤ 15–20 tools per server. Agents see only the servers
+   their task needs, and clients with tool search or deferred loading load
+   schemas on demand.
+8. **Cost-aware.** Every call records tokens returned, bytes scanned and
+   compute used in the `cost_ledger` with the agent identity (primary use case).
+
+### 8.9 Skills
+
+**What a skill is.** A folder with `SKILL.md` (YAML front matter `name` +
+`description`, then instructions), plus optional `scripts/`, `templates/`
+and `reference/`. Agents load only the name and description up front, then the
+body when relevant, then the files on demand (progressive disclosure). OSDF
+uses the open Agent Skills format, so the same skill works in OSDF agents and
+in any skills-compatible client.
+
+**How skills relate to tools:** tools are *capabilities* (what can be done),
+and skills are *procedures* (how a SOC does it well, in order, with checks).
+A skill names the MCP tools it uses and the checks it must pass.
+
+```
+osdf-content/packs/core-skills/skills/
+  onboard-log-source/
+    SKILL.md                 # steps: sample → identify → map OCSF → test → simulate cost → propose
+    reference/ocsf-mapping-guide.md
+    templates/pipeline.yaml.j2
+    scripts/profile_sample.py   # runs in the sandbox
+  reduce-siem-cost/
+    SKILL.md                 # top_cost_sources → field_usage → simulate → cost_check → propose
+  write-sigma-detection/
+  triage-identity-alert/
+  triage-endpoint-alert/
+  hunt-credential-access/
+  write-incident-summary/
+```
+
+```markdown
+---
+name: reduce-siem-cost
+description: Find and propose safe volume reductions for the most expensive
+  security data sources. Use when asked to cut SIEM/ingest cost or review a
+  source's volume. Never removes fields used by production detections.
+---
+1. Call `osdf-cost.top_cost_sources(days=7, limit=10)`.
+2. For each source, call `osdf-cost.field_usage(source_id)` and
+   `osdf-pipeline.sample_source(source_id, n=500)`.
+3. Choose reductions from reference/reduction-catalog.md, in order of
+   savings ÷ risk. Prefer tiering and dropping redundant raw fields first.
+4. Call `osdf-pipeline.simulate_pipeline(...)`, then `osdf-cost.cost_check(...)`.
+   Stop if the check fails.
+5. Call `osdf-pipeline.propose_change(...)` with projected $/month and the safety report.
+```
+
+**Skill lifecycle (same as other content):** author (a human, or an agent
+proposing a new skill from a successful run) → PR → CI (front-matter lint,
+references resolve to existing tools, scripts run in the sandbox, **skill
+evals** show a better task success rate than with no skill) → signed
+release in a pack → distributed to OSDF agents and exported as a bundle
+for external clients. Treat third-party skills like code dependencies:
+review them, pin them and scan them. A skill can carry instructions and
+scripts, so it is a supply-chain and prompt-injection vector.
+
+### 8.10 Code-execution mode and tool discovery
+
+Two problems show up as tool counts grow: tool definitions take up context,
+and large intermediate results flow through the model. Two patterns solve
+them:
+- **Tool search / deferred loading.** Keep servers small and descriptions
+  precise, and publish a tool catalog, so clients that load tool schemas on
+  demand work well.
+- **Code execution.** A typed `osdf` Python SDK, generated from the tool
+  schemas, is available inside the network-less validator sandbox. The agent
+  writes a short script, for example: query, join with `field_usage`, compute
+  savings, and return the top 10. Only the final result enters the context.
+  The sandbox has CPU, memory and time limits. It can reach only the MCP
+  gateway, with the agent's own token, so policy still applies to every call.
+  Public reports claim large token savings from this pattern. Measure it
+  with OSDF's own evals before relying on it.
+
+### 8.11 Agent identity, gateway and A2A
+
+- **Identity.** Each agent (OSDF built-in, customer, or third-party) is
+  registered as an OAuth client in Keycloak (or uses workload identity). It
+  receives short-lived, **audience-bound** tokens per MCP server, carrying tenant,
+  allowed tools and autonomy level as claims. It never reuses a human
+  session. A human who uses an external assistant gets delegated tokens
+  scoped to their own RBAC.
+- **Gateway policy (OPA)** is evaluated per call on agent, tool, arguments,
+  tenant and autonomy level. Examples: `search_sql` limited to 50 GB scanned;
+  `record_verdict(auto_close=true)` only at L3 and above the measured
+  precision threshold; `osdf-admin` denied to all agents by default.
+- **Tool pinning.** The gateway records a hash of each server's tool
+  definitions. A change in a third-party server's tool descriptions blocks
+  that server until a human re-approves it (defends against tool poisoning
+  and silent changes).
+- **Output screening.** Tool outputs that contain event data are tagged
+  untrusted. Known injection patterns are flagged, and secrets/PII are masked
+  according to the egress policy.
+- **Audit.** Every call records agent identity, on-behalf-of user, tool,
+  argument hash, result size, cost, decision and trace ID, written to `osdf.audit`.
+- **Third-party MCP servers** (for example, a SIEM vendor's MCP server for
+  Sentinel or Splunk data, EDR, ticketing, TI) are registered in the
+  gateway allowlist with their own scopes. That makes OSDF the single governed
+  point where SOC agents reach *all* security tools. OSDF does not replace
+  those servers.
+- **A2A (P2).** OSDF's triage, onboarding, detection and cost agents are
+  published with signed agent cards (`/.well-known/agent-card.json`), so an
+  external orchestrator can delegate whole tasks. Blueprints can delegate a step
+  to an allowlisted external agent. The rule of thumb: MCP for agent→tool,
+  A2A for agent→agent across product or organization boundaries.
+- **Guidance.** Use the NSA MCP security design guidance (May 2026) and the OWASP
+  Top 10 for Agentic Applications as the review checklist for every new
+  server, tool, skill and external integration.
+
 ---
 
 ## 9. Control plane design
@@ -635,3 +863,6 @@ compresses 10–20× versus raw text.
 | ADR-09 | Python control plane, Go edge components | Speed of development plus the AI ecosystem; static binaries at the edge | Two toolchains |
 | ADR-10 | Two edge runtimes (Vector and the OTel Collector) behind one OSDF YAML and one OpAMP fleet manager | BindPlane shows that OTel + OpAMP is becoming the standard for agent fleets. Supporting it avoids rip-and-replace for OTel shops | Renderer and test matrix for two engines. Edge-side OTel pipelines support a subset of functions (filter, mask, route, enrich); OCSF mapping stays on Vector workers |
 | ADR-11 | Cost metering is built into the data plane from Phase 1, with a Git-versioned rate card | Cost reduction is the primary use case, and savings that can't be measured can't be defended to finance | Extra metrics cardinality. Mitigated by 5-minute buckets and by attributing per route, not per event |
+| ADR-12 | Split MCP servers by domain behind one gateway | Smaller tool sets per task (accuracy, tokens), independent scaling and permissions, one place for policy and audit | More deployables. The gateway and shared SDK keep them consistent |
+| ADR-13 | SOC procedures ship as Agent Skills (open `SKILL.md` format) inside packs | Know-how becomes versioned, testable, portable content that works in OSDF agents and external clients; progressive disclosure saves tokens | Skills are a new supply-chain/injection vector, so they get signing, review, sandboxed scripts and evals |
+| ADR-14 | External agents are first-class: same tools, identity model and policy as internal agents; A2A for delegation | This is the secondary use case. It avoids lock-in to OSDF's own agents, and customers can bring their own | A larger attack surface. Mitigated by gateway policy, tool pinning, scoped tokens and audit |

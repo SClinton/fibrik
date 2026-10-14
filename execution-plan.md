@@ -30,7 +30,9 @@ agent is only as good as the checks that verify its output.
    prove savings.
 5. **Weeks 7–9: detections.** Sigma → ClickHouse SQL, scheduled runner, alerts
    table + webhook, detection CI with test fixtures, and 10+ rules.
-6. **Weeks 9–12: agents.** LLM gateway, MCP server, eval harness, then
+6. **Weeks 9–12: agents and agent surface.** LLM gateway, domain MCP servers
+   behind an MCP gateway with per-agent identity, the first 5 Agent Skills,
+   an eval harness, then
    cost optimization → search → onboarding → detection → triage agents (in
    that order), all producing PRs or annotations.
 7. **Weeks 12–16: control plane and fleet.** API + RBAC, OpAMP fleet/sidecar,
@@ -98,7 +100,9 @@ osdf/                           # code (Apache-2.0)
     health/                     # silence/volume/drift monitors
     lake/                       # Iceberg writer (MVP), table mgmt, compaction jobs
     agents/                     # onboarding, detection, triage, search, tuning, drift
-    mcp_server/                 # MCP tools
+    mcp_servers/                # domain MCP servers: data, pipeline, detect, alerts, cost, admin
+    mcp_gateway/                # gateway policy glue (OPA, budgets, pinning, audit)
+    sdk/                        # typed osdf SDK generated from tool schemas (code-execution mode)
     workflows/                  # Temporal workflows/activities (blueprints, replay)
   ui/                           # React + TS (Phase 6)
   deploy/compose/               # docker-compose.yml + configs
@@ -108,7 +112,7 @@ osdf/                           # code (Apache-2.0)
   docs/adr/
 
 osdf-content/                   # content (GitOps source of truth)
-  packs/<pack>/{pack.yaml, routes/, pipelines/, vrl/, mappings/, tests/, detections/}
+  packs/<pack>/{pack.yaml, routes/, pipelines/, vrl/, mappings/, tests/, detections/, skills/}
   detections/<domain>/*.yml
   blueprints/*.yaml
   environments/{dev,prod}/{worker-groups.yaml, destinations.yaml, variables.yaml}
@@ -439,7 +443,14 @@ alerts. A backtest works.
    model through Ollama/vLLM). Turn on budget limits and a PII-masking egress hook.
 2. **Langfuse** for tracing. Wrap every agent run in a trace ID that is stored
    with its proposal or annotation.
-3. **OSDF MCP server** (Python MCP SDK) with read tools first: `get_schema`,
+3. **Domain MCP servers + gateway** (architecture §8.6–§8.8, §8.11). Start with
+   `osdf-data`, `osdf-alerts`, `osdf-detect` and `osdf-cost` as stateless HTTP
+   servers (Python MCP SDK, current spec revision), placed behind the **MCP
+   gateway** with Keycloak OAuth clients **per agent**, OPA per-tool policy,
+   budgets and audit. Follow the agent-first tool checklist: task-shaped
+   tools, output schemas, token-bounded responses with **result handles**,
+   `dry_run` defaults and actionable errors.
+   Tools to build, read tools first: `get_schema`,
    `list_sources`, `source_health`, `search` (read-only ClickHouse/Trino,
    time-range required, row/byte limits), `get_alert`, `similar_alerts`,
    `coverage_for_technique`, `ocsf_class_lookup`, `cost_report`, `field_usage`.
@@ -449,6 +460,12 @@ alerts. A backtest works.
    branch and PR in Gitea/GitHub.
 4. **Validator sandbox:** a container with `vector`, `osdf`, and no network. Tools
    that run generated artifacts call it.
+4a. **First five Agent Skills** (`SKILL.md`, in `osdf-content/packs/core-skills`):
+   `reduce-siem-cost`, `onboard-log-source`, `write-sigma-detection`,
+   `triage-identity-alert`, `hunt-credential-access`. The OSDF agents load
+   them, and they are also tested in at least one external skills-capable
+   client against the same MCP servers. That proves the platform is
+   agentic-native and not tied to OSDF's own agents.
 5. **Temporal:** move the detection runner and replay jobs to it, and add the
    generic blueprint workflow.
 6. **Eval harness:** the `evals/` layout, scorers, and `make eval` with a
@@ -474,8 +491,11 @@ If verification fails after N repairs, the agent opens a **draft** PR labeled
   to a `feedback` table. Feedback becomes both eval data and tuning-agent input.
 
 **Exit criteria:** MVP items 4–8 and 10 from requirements §8 are demonstrated live.
-`make eval` publishes a scorecard. An external MCP client (for example, Claude
-Code or Claude Desktop) can connect to the OSDF MCP server and run a search.
+`make eval` publishes a scorecard. An **external MCP client** (for example,
+Claude Code or Claude Desktop) authenticates through the gateway with its own
+agent identity, loads an OSDF skill, and completes a triage and a cost-review
+task. The audit log shows every tool call against that identity, and the
+cost ledger shows its token and scan cost.
 
 ---
 
@@ -505,6 +525,20 @@ Code or Claude Desktop) can connect to the OSDF MCP server and run a search.
 7. **Cost budgets and anomaly alerts** per source/destination (FR-CST-09),
    and a scheduled blueprint that runs the cost optimization agent weekly on
    the top-cost sources.
+8. **Agentic-native surface v2:**
+   - add the `osdf-pipeline` server;
+   - MCP resources (OCSF schema cards, source catalog, rule docs) with
+     subscriptions for new alerts, drift and deployments;
+   - MCP prompts (`/triage`, `/onboard`, `/reduce-cost`, `/hunt`);
+   - async tasks for backtest/replay/simulate, backed by Temporal;
+   - elicitation-based approvals;
+   - the skills library expanded to about 15 skills, with skill CI and skill evals;
+   - the **code-execution sandbox** with a typed `osdf` SDK generated from the
+     tool schemas;
+   - tool/skill selection evals per model and client (FR-AGN-03..11, FR-AGN-16).
+9. **Third-party MCP servers through the gateway:** allowlist the pilot SIEM's
+   MCP server (if one exists) plus ticketing and TI, with tool-definition
+   pinning and scoped tokens (FR-AGN-12).
 
 **Exit criteria:** a fresh Linux VM enrolls as an edge node and receives config
 from the UI. Approving an agent PR in the UI deploys it to the workers with no CLI.
@@ -535,7 +569,16 @@ A deliberate format change in seeded data triggers a drift PR.
    the MCP server and agents (prompt injection through log fields, tool abuse,
    cross-tenant access), cosign/SBOM, secrets in OpenBao, and mTLS everywhere.
 9. **Docs:** quickstart, pack authoring guide, detection authoring guide, agent
-   autonomy guide, and runbooks.
+   autonomy guide, and runbooks, plus a **skill authoring guide** and an
+   **agent integration guide** (connect your own agent: identity, gateway,
+   tools, skills).
+10. **Agent ecosystem (P2, can slip past the pilot):** A2A endpoint with signed
+    agent cards for the triage, onboarding, cost and detection agents; a
+    bring-your-own-agent conformance kit (FR-AGN-14, FR-AGN-17).
+11. **MCP security review:** check every server, tool and skill against the
+    NSA MCP security guidance and the OWASP Agentic Top 10. Red-team tool
+    poisoning, malicious skills, injection through alerts, token replay and
+    cross-tenant calls.
 
 ### Pilot (run side by side, 4–6 weeks)
 - Mirror 3–5 real sources (through Kafka tee or SIEM forwarding) into OSDF
@@ -579,6 +622,8 @@ curl -s 'http://localhost:8123/?query=SELECT+count()+FROM+osdf.ocsf_authenticati
 | Scope creep toward a full SIEM/SOAR | Never ship | Non-goals in requirements §2. Integrate with DFIR-IRIS/Shuffle/existing SIEM |
 | Triage autonomy erodes analyst trust | Rejection | Start at L0/L1. Show evidence. Track the agreement rate publicly. Only allow auto-close above measured precision |
 | Vendor feature claims we benchmark against are unverified | Wrong targets | Set targets from our own pilot measurements, not vendor marketing |
+| External or third-party agents, MCP servers or skills misuse access (tool poisoning, malicious skills, over-broad tokens) | Data exposure or unsafe changes | Gateway with per-agent OAuth and OPA, tool-definition pinning, signed and reviewed skills, sandboxed skill scripts, proposal-only writes, full audit, NSA/OWASP review |
+| MCP/Skills/A2A specs keep changing | Rework | Pin spec revisions, keep tools as thin adapters over `osdf-api`, and run SDK compatibility tests in CI |
 | Savings are eaten by OSDF's own infra and ops cost | No net benefit | Report **net** savings only (FR-CST-12), right-size with the appliance mode, keep optional components off by default, and count ops hours in the pilot |
 | Aggressive reduction drops data a future investigation needs | Missed detection or a failed investigation | Raw archive is always kept (FR-PIP-04), the detection-safety check runs in CI, and selective replay from the lake to the SIEM is available on demand |
 | SIEM pricing model limits volume-based savings (workload or flat licensing) | Lower savings than planned | Baseline assessment first. Under workload pricing, move detections and hunting to the lake/ClickHouse instead |
@@ -592,6 +637,6 @@ curl -s 'http://localhost:8123/?query=SELECT+count()+FROM+osdf.ocsf_authenticati
 | M2 Content | 5 | GitOps packs, `osdf test/deploy`, Grafana health |
 | **M3 Cost value** | 7 | Savings dashboard (baseline vs actual $), reduction library, tiering, what-if + safety check; optional shadow pilot results |
 | M4 Detect | 9 | 10+ Sigma rules in CI, alerts to webhook, backtest, ATT&CK layer |
-| **M5 MVP** | 12 | Cost optimization, search, onboarding, detection and triage agents + MCP + eval scorecard |
-| M6 Platform | 16 | UI, fleet/OpAMP, replay, drift agent, cost budgets |
+| **M5 MVP** | 12 | Cost optimization, search, onboarding, detection and triage agents; domain MCP servers behind the gateway with per-agent identity; 5 core skills; an external MCP client completes tasks; eval scorecard |
+| M6 Platform | 16 | UI, fleet/OpAMP, replay, drift agent, cost budgets; MCP resources/prompts/tasks, skills library + evals, code-execution SDK, third-party MCP servers through the gateway |
 | M7 Pilot-ready | 22 | Helm, perf-tested, security reviewed, federated search, SIEM deploy; pilot judged on net cost reduction |

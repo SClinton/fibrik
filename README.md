@@ -23,6 +23,15 @@ baseline, with no loss of detection coverage. This is requirement G0 in
 (architecture §5.7), and the plan delivers measurable savings at milestone M3,
 before the detection and agent work.
 
+## Secondary use case
+
+**An agentic-native SOC data platform.** Every capability is exposed through
+domain-split **MCP servers** with tools designed for agents. SOC procedures
+ship as portable **Agent Skills** (`SKILL.md`). All agents, whether OSDF's own,
+the customer's, third-party assistants or vendor agents over **A2A**, go
+through one gateway with per-agent identity, policy, budgets and audit. See
+requirements GA and §5.11, and architecture §8.6–§8.11.
+
 ## Documents
 
 1. [`requirements.md`](requirements.md): competitive capability analysis, then
@@ -77,4 +86,15 @@ before the detection and agent work.
 - Anvilogic what's new: https://public-docs.anvilogic.com/whats-new/whats-new
 - Anvilogic AI blueprints and federated search: https://techintelpro.com/news/cybersecurity/ai/anvilogic-launches-ai-blueprints-and-federated-search-for-secops
 - Airframe third-party analysis of Anvilogic: https://www.airframe.ai/product/anvilogic-com/analysis
+- MCP 2026-07-28 spec changes (AAIF migration guide): https://aaif.io/blog/mcp-2026-07-28-whats-changing-and-how-to-migrate
+- MCP blog: https://blog.modelcontextprotocol.io/posts/index.xml
+- MCP 2026-07-28 breaking changes: https://www.developersdigest.tech/blog/mcp-2026-07-28-breaking-changes
+- Agent Skills overview (SKILL.md, progressive disclosure): https://atlan.com/know/ai-agent/ai-agent-skills/what-are-agent-skills/
+- SKILL.md adoption across tools: https://noqta.tn/en/news/skill-md-open-standard-30-ai-coding-tools-adoption-2026
+- MCP context bloat fixes (tool search, code mode, code execution): https://mcp.directory/blog/mcp-context-bloat-fix-2026-tool-search-code-mode-progressive-disclosure
+- A2A protocol architecture: https://tyk.io/learning-center/a2a-protocol-architecture-and-technical-specification/
+- Agent protocol stack (MCP, A2A, ACP) 2026: https://zuplo.com/blog/agent-protocol-stack-mcp-a2a-acp-2026
+- NSA MCP security design considerations (press release): https://www.nsa.gov/Press-Room/Press-Releases-Statements/Press-Release-View/Article/4496698/
+- NSA MCP guidance summary (Reed Smith): https://www.reedsmith.com/our-insights/blogs/viewpoints/102mvg9/nsa-publishes-security-guidance-on-designing-ai-systems-with-model-context-protoc/
+- Microsoft Sentinel MCP server GA (Cloud Wars): https://cloudwars.com/ai/general-availability-of-sentinel-mcp-server-represents-shift-toward-agentic-soc-era/
 - Tenzir FAQ (open source security pipeline reference point): https://docs.tenzir.com/explanations/faqs
