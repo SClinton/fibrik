@@ -1,0 +1,18 @@
+apiVersion: v2
+name: fibrik
+description: Fibrik, the Open Security Data Fabric for Agentic AI. One chart for every target (kind, k3d, k3s).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/SClinton/fibrik
+sources:
+  - https://github.com/SClinton/fibrik
+annotations:
+  artifacthub.io/license: Apache-2.0
+keywords:
+  - security
+  - opentelemetry
+  - ocsf
+  - mcp
+maintainers:
+  - name: SClinton

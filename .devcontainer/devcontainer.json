@@ -1,0 +1,27 @@
+// GitHub Codespaces / Dev Containers environment for Fibrik.
+// The development host while no always-on VM is available (ADR-24).
+// Inside it: `make kind-up deploy test`, the same steps CI runs.
+{
+  "name": "fibrik",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    // kind runs Kubernetes nodes as Docker containers.
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  // 2-core / 8 GB stretches the free quota to ~60 hours a month and fits
+  // PROFILE=ci. Pick the 4-core machine for heavier runs (~30 hours).
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "postCreateCommand": "make tools",
+  "remoteEnv": {
+    "PATH": "${containerWorkspaceFolder}/.bin:${containerEnv:PATH}"
+  },
+  // `kubectl port-forward svc/fibrik-caddy 8080:80` serves the UI here.
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "fibrik (caddy)" }
+  }
+}

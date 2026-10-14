@@ -255,7 +255,7 @@ after the MVP or for paying deployments.
 
 ## 9. Changes to the MVP timeline (mvp-scope §7)
 
-- **Week 0:** create OCI (free-only), GitHub org/repo, Cloudflare (free), and
+- **Week 0:** create OCI (free-only), GitHub repos under `SClinton`, Cloudflare (free), and
   free accounts on AWS/Azure/GCP for connector tests. Set budget alerts.
   Confirm current allowances and record them in `docs/free-tier-ledger.md`.
 - **Weeks 1–3:** the lean profile (k3s on OCI ARM + Compose on the Mac mini),

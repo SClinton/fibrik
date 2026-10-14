@@ -1,0 +1,24 @@
+# kind in GitHub Actions (amd64). Plain HTTP, mock login, small volumes.
+global:
+  publicUrl: http://localhost:8080
+
+dex:
+  # Dex's built-in test connector: logs in without an upstream IdP.
+  # CI only; never use it on a reachable deployment.
+  connectors:
+    - type: mockCallback
+      id: mock
+      name: Mock login (CI)
+
+postgres:
+  persistence: { size: 1Gi }
+clickhouse:
+  maxServerMemoryUsage: 1073741824
+  persistence: { size: 2Gi }
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 1536Mi }
+victoriametrics:
+  persistence: { size: 1Gi }
+caddy:
+  persistence: { size: 64Mi }

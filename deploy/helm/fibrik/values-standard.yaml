@@ -1,0 +1,29 @@
+# Larger single-node or managed Kubernetes hosts (from ~20 GB/day).
+# Starting point only; benchmark before relying on it.
+postgres:
+  sharedBuffers: 1GB
+  maxConnections: 200
+  persistence: { size: 50Gi }
+  resources:
+    requests: { cpu: 500m, memory: 2Gi }
+    limits: { memory: 4Gi }
+
+clickhouse:
+  maxServerMemoryUsage: 12884901888
+  markCacheSize: 1073741824
+  persistence: { size: 500Gi }
+  resources:
+    requests: { cpu: "2", memory: 8Gi }
+    limits: { memory: 14Gi }
+
+lakekeeper:
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+victoriametrics:
+  retentionPeriod: 90d
+  persistence: { size: 100Gi }
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { memory: 2Gi }

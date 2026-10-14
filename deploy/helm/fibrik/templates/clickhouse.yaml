@@ -1,0 +1,110 @@
+{{- if .Values.clickhouse.enabled }}
+{{- $name := include "fibrik.component" (list . "clickhouse") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-config
+  labels:
+    {{- include "fibrik.labels" (list . "clickhouse") | nindent 4 }}
+data:
+  fibrik.xml: |
+    <clickhouse>
+      <max_server_memory_usage>{{ int64 .Values.clickhouse.maxServerMemoryUsage }}</max_server_memory_usage>
+      <mark_cache_size>{{ int64 .Values.clickhouse.markCacheSize }}</mark_cache_size>
+      <logger>
+        <level>warning</level>
+        <console>1</console>
+      </logger>
+      <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+      </prometheus>
+    </clickhouse>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "clickhouse") | nindent 4 }}
+spec:
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "clickhouse") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8123
+      targetPort: http
+    - name: native
+      port: 9000
+      targetPort: native
+    - name: metrics
+      port: 9363
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "clickhouse") | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "clickhouse") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "clickhouse") | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values.clickhouse | toJson | sha256sum }}
+    spec:
+      containers:
+        - name: clickhouse
+          image: {{ include "fibrik.image" .Values.clickhouse.image }}
+          env:
+            - name: CLICKHOUSE_DB
+              value: {{ .Values.clickhouse.database | quote }}
+            - name: CLICKHOUSE_USER
+              value: {{ .Values.clickhouse.user | quote }}
+            - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+              value: "1"
+            {{- include "fibrik.secretEnv" (list . "CLICKHOUSE_PASSWORD" "clickhouse-password") | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8123
+            - name: native
+              containerPort: 9000
+            - name: metrics
+              containerPort: 9363
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.clickhouse.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: config
+              mountPath: /etc/clickhouse-server/config.d/fibrik.xml
+              subPath: fibrik.xml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}-config
+  volumeClaimTemplates:
+    {{- include "fibrik.pvc" (list . .Values.clickhouse.persistence.size) | nindent 4 }}
+{{- end }}

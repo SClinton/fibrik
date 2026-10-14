@@ -1,0 +1,98 @@
+{{- if .Values.postgres.enabled }}
+{{- $name := include "fibrik.component" (list . "postgres") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-initdb
+  labels:
+    {{- include "fibrik.labels" (list . "postgres") | nindent 4 }}
+data:
+  # Runs once, on an empty data directory. Creates one role and database per
+  # component that shares this Postgres (Lakekeeper catalog, Dex sessions).
+  10-fibrik-databases.sh: |
+    #!/bin/sh
+    set -eu
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<EOSQL
+    CREATE ROLE lakekeeper LOGIN PASSWORD '${LAKEKEEPER_DB_PASSWORD}';
+    CREATE DATABASE lakekeeper OWNER lakekeeper;
+    CREATE ROLE dex LOGIN PASSWORD '${DEX_DB_PASSWORD}';
+    CREATE DATABASE dex OWNER dex;
+    EOSQL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "postgres") | nindent 4 }}
+spec:
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "postgres") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "postgres") | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "postgres") | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ include "fibrik.image" .Values.postgres.image }}
+          args:
+            - -c
+            - shared_buffers={{ .Values.postgres.sharedBuffers }}
+            - -c
+            - max_connections={{ .Values.postgres.maxConnections }}
+          env:
+            - name: POSTGRES_USER
+              value: fibrik
+            - name: POSTGRES_DB
+              value: fibrik
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            {{- include "fibrik.secretEnv" (list . "POSTGRES_PASSWORD" "postgres-password") | nindent 12 }}
+            {{- include "fibrik.secretEnv" (list . "LAKEKEEPER_DB_PASSWORD" "lakekeeper-db-password") | nindent 12 }}
+            {{- include "fibrik.secretEnv" (list . "DEX_DB_PASSWORD" "dex-db-password") | nindent 12 }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "fibrik", "-d", "fibrik"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "fibrik", "-d", "fibrik"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: initdb
+          configMap:
+            name: {{ $name }}-initdb
+            defaultMode: 0555
+  volumeClaimTemplates:
+    {{- include "fibrik.pvc" (list . .Values.postgres.persistence.size) | nindent 4 }}
+{{- end }}

@@ -1,0 +1,83 @@
+{{- /*
+Smoke tests, run with `helm test` (make test). Each check talks to a
+component over its in-cluster Service, the same way the platform will.
+*/}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "fibrik.component" (list . "smoke-http") }}
+  labels:
+    {{- include "fibrik.labels" (list . "smoke") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  containers:
+    - name: smoke
+      image: {{ include "fibrik.image" .Values.tests.image }}
+      env:
+        {{- include "fibrik.secretEnv" (list . "CLICKHOUSE_PASSWORD" "clickhouse-password") | nindent 8 }}
+      command:
+        - sh
+        - -ec
+        - |
+          check() { echo "--- $1"; shift; "$@"; echo; }
+          {{- if .Values.clickhouse.enabled }}
+          {{- $ch := include "fibrik.component" (list . "clickhouse") }}
+          check "clickhouse ping" curl -fsS http://{{ $ch }}:8123/ping
+          check "clickhouse query" sh -c 'test "$(curl -fsS -u {{ .Values.clickhouse.user }}:$CLICKHOUSE_PASSWORD "http://{{ $ch }}:8123/?query=SELECT%201")" = 1'
+          {{- end }}
+          {{- if .Values.lakekeeper.enabled }}
+          check "lakekeeper health" curl -fsS http://{{ include "fibrik.component" (list . "lakekeeper") }}:8181/health
+          {{- end }}
+          {{- if .Values.victoriametrics.enabled }}
+          check "victoriametrics health" curl -fsS http://{{ include "fibrik.component" (list . "victoriametrics") }}:8428/health
+          {{- end }}
+          {{- if .Values.caddy.enabled }}
+          {{- $caddy := include "fibrik.component" (list . "caddy") }}
+          {{- $host := default "" .Values.caddy.domain }}
+          check "caddy health" curl -fsS {{ with $host }}-H "Host: {{ . }}" {{ end }}http://{{ $caddy }}/healthz
+          {{- if .Values.dex.enabled }}
+          {{- if $host }}
+          {{- /* With a domain set, plain HTTP redirects to HTTPS; check Dex directly. */}}
+          check "dex discovery" sh -c 'curl -fsS http://{{ include "fibrik.component" (list . "dex") }}:5556/dex/.well-known/openid-configuration | grep -q "\"issuer\""'
+          {{- else }}
+          check "dex discovery via caddy" sh -c 'curl -fsS http://{{ $caddy }}/dex/.well-known/openid-configuration | grep -q "\"issuer\": *\"{{ .Values.global.publicUrl }}/dex\""'
+          {{- end }}
+          {{- end }}
+          {{- end }}
+          echo "all smoke checks passed"
+{{- if .Values.postgres.enabled }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "fibrik.component" (list . "smoke-postgres") }}
+  labels:
+    {{- include "fibrik.labels" (list . "smoke") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  containers:
+    - name: smoke
+      image: {{ include "fibrik.image" .Values.postgres.image }}
+      env:
+        - name: PGHOST
+          value: {{ include "fibrik.component" (list . "postgres") }}
+        {{- include "fibrik.secretEnv" (list . "FIBRIK_PW" "postgres-password") | nindent 8 }}
+        {{- include "fibrik.secretEnv" (list . "LAKEKEEPER_PW" "lakekeeper-db-password") | nindent 8 }}
+        {{- include "fibrik.secretEnv" (list . "DEX_PW" "dex-db-password") | nindent 8 }}
+      command:
+        - sh
+        - -ec
+        - |
+          for db in fibrik:fibrik:$FIBRIK_PW lakekeeper:lakekeeper:$LAKEKEEPER_PW dex:dex:$DEX_PW; do
+            user=${db%%:*}; rest=${db#*:}; name=${rest%%:*}; pw=${rest#*:}
+            echo "--- postgres login $user@$name"
+            PGPASSWORD=$pw psql -U "$user" -d "$name" -tAc 'SELECT 1' | grep -qx 1
+          done
+          echo "all postgres checks passed"
+{{- end }}

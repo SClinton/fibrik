@@ -139,7 +139,7 @@ chart or code changes.
 
 | Day | Steps |
 |---|---|
-| 1 | Create GitHub org + repos (`fibrik`, `fibrik-content`, `fibrik-connectors`), Oracle Cloud (free-only), Google AI Studio key. Set budget alerts. Start `docs/free-tier-ledger.md` |
+| 1 | Create repos under the `SClinton` GitHub account (`fibrik`, `fibrik-content`, `fibrik-connectors`), Oracle Cloud (free-only), Google AI Studio key. Set budget alerts. Start `docs/free-tier-ledger.md` |
 | 2 | Helm chart skeleton + `make` targets. kind in CI deploys Postgres, ClickHouse, Lakekeeper, VictoriaMetrics, Caddy, Dex. Multi-arch images to GHCR with cosign |
 | 3 | Same chart on the Mac mini with k3d. Add `fibrik-otelcol` gateway + Vector + `fibrik-api`. A syslog line lands in ClickHouse and Iceberg (S3 bucket on the dev host: an OCI bucket or any S3-compatible endpoint) |
 | 4 | OpenTofu OCI module: VM, volume, bucket, network rules (443 only). Install k3s and Flux; Flux pulls the same chart with `values-free.yaml`. Caddy obtains a TLS certificate |
@@ -156,3 +156,11 @@ sign-in via Dex/GitHub. Total spend $0.00.
   Cloud- or vendor-specific services are allowed only as ingestion sources or
   optional add-ons. Consequence: Caddy + Dex replace Cloudflare Tunnel/Access/Pages
   in the core, and k3d replaces Compose for local development.
+- **ADR-24: GitHub Codespaces as the development host while OCI is blocked.**
+  The OCI Always Free signup was flagged as a possible duplicate account, so
+  there is no always-on VM yet. Development and the week-1 checks run in a
+  Codespace (`.devcontainer/`, kind via Docker-in-Docker, amd64), within the
+  free quota and a $0 spending limit. The Mac mini (k3d) keeps the arm64
+  check. The always-on k3s target (§8, day 4) moves to OCI once the account
+  is cleared, or to an AWS free-plan Graviton VM when a demo needs one.
+  Consequence: no chart or code changes; only the day-4 host differs.

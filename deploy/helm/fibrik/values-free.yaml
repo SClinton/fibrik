@@ -1,0 +1,43 @@
+# k3s on the OCI Always Free VM: 2 OCPU / 12 GB ARM64.
+# Memory limits follow the lean-profile budget in zero-cost-mvp.md §3.
+global:
+  # Set to https://<your domain> (the same host as caddy.domain).
+  publicUrl: https://fibrik.example.com
+
+caddy:
+  # A hostname whose DNS A record points at the VM's public IP, with port 443
+  # open. Caddy gets the Let's Encrypt certificate itself.
+  domain: fibrik.example.com
+  acmeEmail: ""
+  # k3s ServiceLB binds ports 80 and 443 on the node.
+  service:
+    type: LoadBalancer
+  resources:
+    limits: { memory: 64Mi }
+
+dex:
+  # Secret with GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET (SOPS + age).
+  envFromSecret: fibrik-dex-github
+
+postgres:
+  sharedBuffers: 128MB
+  persistence: { size: 10Gi }
+  resources:
+    limits: { memory: 400Mi }
+
+clickhouse:
+  # ~2.5 GB budget: server cap 2 GiB inside a 2.5 GiB container limit.
+  maxServerMemoryUsage: 2147483648
+  persistence: { size: 50Gi }
+  resources:
+    limits: { memory: 2560Mi }
+
+lakekeeper:
+  resources:
+    limits: { memory: 200Mi }
+
+victoriametrics:
+  retentionPeriod: 15d
+  persistence: { size: 10Gi }
+  resources:
+    limits: { memory: 400Mi }
