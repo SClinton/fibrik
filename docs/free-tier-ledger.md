@@ -32,8 +32,8 @@ All Fibrik repositories, images, packages and sites live under the
 | Repo | Purpose | Visibility | Status |
 |---|---|---|---|
 | `SClinton/fibrik` | Platform code, Helm chart, specs | Public | Exists |
-| `SClinton/fibrik-content` | Pipelines, detections, Agent Skills content | Public | Not created |
-| `SClinton/fibrik-connectors` | Community connector registry | Public | Not created |
+| `SClinton/fibrik-content` | Pipelines, detections, Agent Skills content | Public | Created 2026-10-14 |
+| `SClinton/fibrik-connectors` | Community connector registry | Public | Created 2026-10-14 |
 
 ## 2. Allowances
 
