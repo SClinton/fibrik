@@ -38,6 +38,12 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
   with **OpenTelemetry-first ingestion** and an **extensible, community-friendly
   connectors framework**, including **AWS S3, Azure Blob/ADLS and Google Cloud
   Storage** as ingestion points. See `mvp-scope.md` and `connectors-framework.md`.
+- **$0 upfront:** the MVP is built and hosted on free tiers (OCI Always Free
+  ARM64 + k3s, GitHub, Cloudflare Tunnel; AWS/Azure/GCP free allowances for
+  storage-ingestion tests). See `zero-cost-mvp.md`.
+- **AI data optimization:** Gemini (and other LLMs, provider-agnostic) design
+  data flows, remove unneeded storage and generate transformations. They act as
+  compilers and analysts, never per event. See `ai-data-optimization.md`.
 - **Post-MVP:** a SaaS/BYOC hosting model across clouds, and compute offload to
   Snowflake/Databricks. See `saas-byoc-and-compute-offload.md`.
 
@@ -59,6 +65,12 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
 6. [`saas-byoc-and-compute-offload.md`](saas-byoc-and-compute-offload.md):
    requirements assessment for managed BYOC hosting on AWS/Azure/GCP/OCI and
    for offloading processing to Snowflake/Databricks (post-MVP).
+7. [`zero-cost-mvp.md`](zero-cost-mvp.md): how to build and run the MVP on
+   free tiers with $0 upfront cost: platform choice, lean profile memory
+   budget, free services, and guardrails against surprise bills.
+8. [`ai-data-optimization.md`](ai-data-optimization.md): using Gemini and other
+   LLMs to optimize data flows, eliminate unneeded storage and generate
+   transformations, without per-event LLM cost.
 
 ## Research caveats
 
@@ -115,4 +127,7 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
 - NSA MCP security design considerations (press release): https://www.nsa.gov/Press-Room/Press-Releases-Statements/Press-Release-View/Article/4496698/
 - NSA MCP guidance summary (Reed Smith): https://www.reedsmith.com/our-insights/blogs/viewpoints/102mvg9/nsa-publishes-security-guidance-on-designing-ai-systems-with-model-context-protoc/
 - Microsoft Sentinel MCP server GA (Cloud Wars): https://cloudwars.com/ai/general-availability-of-sentinel-mcp-server-represents-shift-toward-agentic-soc-era/
+- OCI Always Free resources: https://docs.oracle.com/en-us/iaas/Content/FreeTier/resourceref.htm
+- InfoQ on OCI Always Free changes (Jul 2026): https://infoq.com/news/2026/07/oracle-cloud-free-tier-limits/
+- LILAC LLM log parsing with adaptive cache: https://arxiv.org/pdf/2310.01796
 - Tenzir FAQ (open source security pipeline reference point): https://docs.tenzir.com/explanations/faqs

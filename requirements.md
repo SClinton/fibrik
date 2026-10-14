@@ -524,7 +524,7 @@ results with each proposal.
 | NFR-LIC-01 | Licensing | Runtime dependencies use OSI-approved licenses (Apache-2.0, MIT, BSD, MPL-2.0, LGPL, AGPL/GPL acceptable for separate services). No source-available or BSL/SSPL components on the default path. OSDF code itself is Apache-2.0 |
 | NFR-COST-01 | Efficiency | Cost/GB targets: lake storage ≤ object storage cost plus about 10% compute overhead. Documented sizing guide |
 | NFR-COST-02 | Transformation efficiency | Pipeline compute ≤ 1 vCPU per 5k EPS for parse + OCSF map + 2 destinations (sustained). Measured and published per pack |
-| NFR-COST-03 | No LLM in the per-event path | LLMs run only at design time (generating parsers, rules and reductions) and per alert or question, never per event. Runtime transformation is deterministic VRL/OTTL. This keeps transformation cost linear in CPU and not in tokens |
+| NFR-COST-03 | No LLM in the per-event path (by default) | Exception: an opt-in, rate-capped, budgeted runtime AI step on low-volume routes only (ai-data-optimization.md, mode D). LLMs run only at design time (generating parsers, rules and reductions) and per alert or question, never per event. Runtime transformation is deterministic VRL/OTTL. This keeps transformation cost linear in CPU and not in tokens |
 | NFR-COST-04 | LLM spend control | Per-agent and per-tenant token budgets, caching, smaller or local models for routine steps. Agent cost is reported in the cost ledger (FR-CST-12) |
 | NFR-COST-05 | Right-sized footprint | A single-node appliance runs ≤ 50 GB/day on ≤ 16 vCPU / 64 GB RAM. Optional components (Trino, Temporal, Flink) can be disabled for small installs |
 

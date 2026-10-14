@@ -30,7 +30,15 @@ Three constraints shape it:
 3. **Prioritized by the primary use case** (cost reduction) first, the
    secondary use case (agentic-native) second, and detection/triage last.
 
-### Decision: hosting platform (choose in week 0)
+### Decision: hosting platform
+
+> **Updated by [`zero-cost-mvp.md`](zero-cost-mvp.md):** to keep upfront cost
+> at $0, the MVP platform is **OCI Always Free (ARM64) running k3s**, with the
+> Mac mini as an identical dev/demo host. The design partner's cloud is
+> connected as an *ingestion source*. The table below is kept for the
+> post-MVP choice of paid hosting.
+
+#### Original options (for paid hosting after the MVP)
 
 | Option | Pros | Cons |
 |---|---|---|
@@ -316,10 +324,18 @@ flow-log packs are Should.
 | NFR-OPS-02 Self-observability | **Must** | Operator Grafana dashboards |
 | NFR-OPS-03 Upgrades | **Must (lite)** | `helm upgrade` with migration jobs. Zero-downtime is Post |
 | NFR-OPS-04 GitOps | **Must (lite)** | Embedded Git (Gitea) by default; external Git is Should |
-| NFR-PERF-01 | **Must (scaled)** | MVP target: ≥ 20k EPS / ~500 GB/day on the reference footprint |
+| NFR-PERF-01 | **Must (scaled)** | $0 lean profile: ≥ 2k EPS / ~5–20 GB/day on OCI Always Free (zero-cost-mvp §3). Standard profile: ≥ 20k EPS / ~500 GB/day |
 | NFR-COST-01–05 | **Must** | |
 | NFR-LIC-01 | **Must** | |
 | SaaS/BYOC (FR-HST, FR-SAAS, FR-OFF) | Post | Only the saas doc §8 "decide now" items are Must |
+
+### 5.6a AI data optimization (Gemini and other LLMs)
+
+See [`ai-data-optimization.md`](ai-data-optimization.md). MVP priorities:
+storage optimizer (lite), NL flow/routing optimizer, transformation
+assistant (lite), template miner, Gemini as a first-class provider with
+data-use policy, and AI cost accounting are **Must**. Per-template LLM
+labeling is **Should**. The runtime AI step is **Post**.
 
 ### 5.7 Explicitly out of the MVP
 Multi-cloud deployment; the SaaS control plane and BYOC; Snowflake/Databricks
