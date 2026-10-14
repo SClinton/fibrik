@@ -1,0 +1,155 @@
+{{- if .Values.vector.enabled }}
+{{- $name := include "fibrik.component" (list . "vector") }}
+{{- $endpoint := include "fibrik.storageEndpoint" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-config
+  labels:
+    {{- include "fibrik.labels" (list . "vector") | nindent 4 }}
+data:
+  normalize.vrl: |
+    {{- .Files.Get "files/normalize.vrl" | nindent 4 }}
+  vector.yaml: |
+    data_dir: /var/lib/vector
+    # Credentials come from mounted Secret files, not the environment.
+    secret:
+      fibrik:
+        type: directory
+        path: /etc/vector/secrets
+    api:
+      enabled: true
+      address: 0.0.0.0:8686
+    sources:
+      otlp:
+        type: opentelemetry
+        grpc: { address: 0.0.0.0:4317 }
+        http: { address: 0.0.0.0:4318 }
+    transforms:
+      normalize:
+        type: remap
+        inputs: [otlp.logs]
+        file: /etc/vector/normalize.vrl
+    sinks:
+      clickhouse:
+        type: clickhouse
+        inputs: [normalize]
+        endpoint: http://{{ include "fibrik.component" (list . "clickhouse") }}:8123
+        database: {{ .Values.clickhouse.database }}
+        table: raw_logs
+        auth:
+          strategy: basic
+          user: {{ .Values.clickhouse.user }}
+          password: "SECRET[fibrik.clickhouse-password]"
+        date_time_best_effort: true
+        skip_unknown_fields: true
+        batch: { timeout_secs: 2 }
+        buffer: { type: disk, max_size: 536870912, when_full: block }
+        # The table appears once fibrik-api has run its migrations.
+        healthcheck: { enabled: false }
+      lake_landing:
+        type: aws_s3
+        inputs: [normalize]
+        bucket: {{ .Values.storage.bucket }}
+        region: {{ .Values.storage.region }}
+        {{- with $endpoint }}
+        endpoint: {{ . }}
+        {{- end }}
+        force_path_style: {{ .Values.storage.pathStyle }}
+        key_prefix: "raw/pending/dt=%F/"
+        filename_extension: ndjson.gz
+        compression: gzip
+        encoding: { codec: json }
+        framing: { method: newline_delimited }
+        batch: { timeout_secs: 10 }
+        buffer: { type: disk, max_size: 536870912, when_full: block }
+        healthcheck: { enabled: false }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "vector") | nindent 4 }}
+spec:
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "vector") | nindent 4 }}
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+    - name: api
+      port: 8686
+      targetPort: api
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "vector") | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "vector") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "vector") | nindent 8 }}
+      annotations:
+        checksum/config: {{ list .Values.vector .Values.storage (.Files.Get "files/normalize.vrl") | toJson | sha256sum }}
+    spec:
+      containers:
+        - name: vector
+          image: {{ include "fibrik.image" .Values.vector.image }}
+          args: ["--config", "/etc/vector/vector.yaml"]
+          env:
+            # Read by the AWS SDK in the aws_s3 sink.
+            {{- include "fibrik.storageCredentialEnv" (list . "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY") | nindent 12 }}
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: api
+              containerPort: 8686
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: api
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.vector.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/vector
+            - name: config
+              mountPath: /etc/vector
+              readOnly: true
+            - name: secrets
+              mountPath: /etc/vector/secrets
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}-config
+        - name: secrets
+          secret:
+            secretName: {{ include "fibrik.credentialsSecret" . }}
+            items:
+              - key: clickhouse-password
+                path: clickhouse-password
+  volumeClaimTemplates:
+    {{- include "fibrik.pvc" (list . .Values.vector.persistence.size) | nindent 4 }}
+{{- end }}

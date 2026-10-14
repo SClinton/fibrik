@@ -18,7 +18,7 @@
   "staticClients" (list (dict
     "id" .Values.dex.clientId
     "name" "Fibrik"
-    "secret" (index $creds "dex-client-secret")
+    "public" true
     "redirectURIs" (list (printf "%s/auth/callback" .Values.global.publicUrl))))
   "connectors" (tpl (toYaml .Values.dex.connectors) . | fromYamlArray)
   "enablePasswordDB" false

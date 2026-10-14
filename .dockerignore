@@ -1,0 +1,9 @@
+.git
+.bin
+.venv
+**/__pycache__
+**/_build
+deploy
+docs
+*.md
+!README.md

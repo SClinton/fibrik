@@ -45,7 +45,7 @@ every template in one render sees the same values.
 */}}
 {{- define "fibrik.credentials" -}}
 {{- if not (hasKey .Values "_credentials") -}}
-{{- $keys := list "postgres-password" "lakekeeper-db-password" "lakekeeper-encryption-key" "dex-db-password" "dex-client-secret" "clickhouse-password" -}}
+{{- $keys := list "postgres-password" "lakekeeper-db-password" "lakekeeper-encryption-key" "dex-db-password" "dex-client-secret" "clickhouse-password" "s3-access-key-id" "s3-secret-access-key" -}}
 {{- $existing := (lookup "v1" "Secret" .Release.Namespace (include "fibrik.credentialsSecret" .)).data | default dict -}}
 {{- $out := dict -}}
 {{- range $keys -}}
@@ -104,4 +104,78 @@ every template in one render sees the same values.
   value: postgresql://lakekeeper:$(LAKEKEEPER_DB_PASSWORD)@{{ $pg }}:5432/lakekeeper
 - name: LAKEKEEPER__BASE_URI
   value: http://{{ include "fibrik.component" (list . "lakekeeper") }}:8181
+{{- end -}}
+
+{{/* Image of a Fibrik-built component, e.g. (list $ "fibrik-api"). */}}
+{{- define "fibrik.ownImage" -}}
+{{- $root := index . 0 -}}
+{{- printf "%s/%s:%s" $root.Values.images.registry (index . 1) (default $root.Chart.AppVersion $root.Values.images.tag) -}}
+{{- end -}}
+
+{{/* S3 endpoint from the storage profile. */}}
+{{- define "fibrik.storageEndpoint" -}}
+{{- if .Values.storage.endpoint -}}
+{{- .Values.storage.endpoint -}}
+{{- else if .Values.seaweedfs.enabled -}}
+{{- printf "http://%s:8333" (include "fibrik.component" (list . "seaweedfs")) -}}
+{{- end -}}
+{{- end -}}
+
+{{/* Env vars holding the S3 credentials, under the given names. Call with (list $ "ID_VAR" "SECRET_VAR"). */}}
+{{- define "fibrik.storageCredentialEnv" -}}
+{{- $root := index . 0 -}}
+{{- if $root.Values.seaweedfs.enabled -}}
+{{ include "fibrik.secretEnv" (list $root (index . 1) "s3-access-key-id") }}
+{{ include "fibrik.secretEnv" (list $root (index . 2) "s3-secret-access-key") }}
+{{- else -}}
+- name: {{ index . 1 }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "storage.existingSecret is required when seaweedfs is disabled" $root.Values.storage.existingSecret }}
+      key: access-key-id
+- name: {{ index . 2 }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $root.Values.storage.existingSecret }}
+      key: secret-access-key
+{{- end -}}
+{{- end -}}
+
+{{/* Settings for fibrik-api and its migrate job (fibrik/settings.py). */}}
+{{- define "fibrik.apiEnv" -}}
+{{- $lk := include "fibrik.component" (list . "lakekeeper") -}}
+- name: FIBRIK_CLICKHOUSE_URL
+  value: http://{{ include "fibrik.component" (list . "clickhouse") }}:8123
+- name: FIBRIK_CLICKHOUSE_USER
+  value: {{ .Values.clickhouse.user | quote }}
+- name: FIBRIK_CLICKHOUSE_DATABASE
+  value: {{ .Values.clickhouse.database | quote }}
+- name: FIBRIK_HOT_TTL_DAYS
+  value: {{ .Values.clickhouse.hotTtlDays | quote }}
+{{ include "fibrik.secretEnv" (list . "FIBRIK_CLICKHOUSE_PASSWORD" "clickhouse-password") }}
+- name: FIBRIK_CATALOG_URI
+  value: http://{{ $lk }}:8181/catalog
+- name: FIBRIK_CATALOG_MANAGEMENT_URI
+  value: http://{{ $lk }}:8181/management
+- name: FIBRIK_AUTH_ENABLED
+  value: {{ .Values.dex.enabled | quote }}
+- name: FIBRIK_OIDC_ISSUER
+  value: {{ printf "%s/dex" .Values.global.publicUrl | quote }}
+- name: FIBRIK_OIDC_AUDIENCE
+  value: {{ .Values.dex.clientId | quote }}
+- name: FIBRIK_OIDC_JWKS_URL
+  value: http://{{ include "fibrik.component" (list . "dex") }}:5556/dex/keys
+- name: FIBRIK_LAKE_WRITER_INTERVAL_SECONDS
+  value: {{ .Values.api.lakeWriterIntervalSeconds | quote }}
+- name: FIBRIK_STORAGE_TYPE
+  value: {{ .Values.storage.type | quote }}
+- name: FIBRIK_STORAGE_BUCKET
+  value: {{ .Values.storage.bucket | quote }}
+- name: FIBRIK_STORAGE_ENDPOINT
+  value: {{ include "fibrik.storageEndpoint" . | quote }}
+- name: FIBRIK_STORAGE_REGION
+  value: {{ .Values.storage.region | quote }}
+- name: FIBRIK_STORAGE_PATH_STYLE
+  value: {{ .Values.storage.pathStyle | quote }}
+{{ include "fibrik.storageCredentialEnv" (list . "FIBRIK_STORAGE_ACCESS_KEY_ID" "FIBRIK_STORAGE_SECRET_ACCESS_KEY") }}
 {{- end -}}

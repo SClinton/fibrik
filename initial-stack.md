@@ -128,8 +128,8 @@ and images** on:
 | Target | Where | Cost |
 |---|---|---|
 | **kind** (amd64) | GitHub Actions | $0 |
-| **k3d** (arm64) | Mac mini | $0 |
-| **k3s** (arm64) | OCI Always Free VM | $0 |
+| **k3d** (arm64) | GitHub Actions arm64 runner (`ubuntu-24.04-arm`), and the Mac mini | $0 |
+| **k3s** (arm64) | OCI Always Free VM (deferred, ADR-24); any Linux host via `hack/install-k3s.sh` | $0 |
 
 Post-MVP, add a managed Kubernetes target (EKS/AKS/GKE) to the matrix when
 paid hosting starts. Only an OpenTofu module and a values file are added, with no

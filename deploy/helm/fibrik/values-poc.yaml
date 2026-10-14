@@ -1,0 +1,36 @@
+# Prototype in a GitHub Codespace (kind or k3d) with the lake on Cloudflare R2.
+# Synthetic or sanitized data only (zero-cost-mvp.md §1).
+#
+#   kubectl -n fibrik create secret generic fibrik-storage \
+#     --from-literal=access-key-id="$R2_ACCESS_KEY_ID" \
+#     --from-literal=secret-access-key="$R2_SECRET_ACCESS_KEY"
+#   make deploy PROFILE=poc EXTRA_ARGS="--set storage.endpoint=https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+global:
+  publicUrl: http://localhost:8080
+
+storage:
+  bucket: fibrik-lake-dev
+  # https://<account id>.r2.cloudflarestorage.com (set at deploy time).
+  endpoint: ""
+  region: auto
+  pathStyle: true
+  existingSecret: fibrik-storage
+seaweedfs:
+  enabled: false
+
+dex:
+  # Until the GitHub OAuth app exists, use the mock login (local use only).
+  connectors:
+    - type: mockCallback
+      id: mock
+      name: Mock login (prototype)
+
+clickhouse:
+  hotTtlDays: 3
+  maxServerMemoryUsage: 1073741824
+  persistence: { size: 5Gi }
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 1536Mi }
+victoriametrics:
+  enabled: false

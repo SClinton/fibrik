@@ -1,0 +1,14 @@
+# The always-on free-tier VM (OCI Always Free when available): lean
+# resource limits, Caddy with Let's Encrypt, external S3 bucket.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - target:
+      kind: HelmRelease
+      name: fibrik
+    patch: |
+      - op: add
+        path: /spec/chart/spec/valuesFiles/-
+        value: ./deploy/helm/fibrik/values-free.yaml

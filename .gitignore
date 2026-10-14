@@ -1,2 +1,19 @@
 # Tools installed by `make tools`
 /.bin/
+
+# Python
+/.venv/
+__pycache__/
+*.egg-info/
+# OCB build output
+/cmd/fibrik-otelcol/_build/
+
+# OpenTofu
+.terraform/
+.terraform.lock.hcl
+*.tfstate*
+
+# Docs site
+/.site/
+/.site-src/
+/.venv-docs/

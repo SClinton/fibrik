@@ -1,0 +1,18 @@
+# Normalize OTLP log records into the raw_logs row shape shared by
+# ClickHouse (fibrik/clickhouse.py) and the Iceberg lake (fibrik/lake/schema.py).
+# OCSF mapping joins here from week 2.
+attrs = object(.attributes) ?? {}
+res = object(.resources) ?? {}
+ts = .timestamp
+if ts == null { ts = .observed_timestamp }
+if ts == null { ts = now() }
+. = {
+  "event_time": ts,
+  "ingest_time": now(),
+  "source": string(res."fibrik.source") ?? "otlp",
+  "host": string(attrs.hostname) ?? string(res."host.name") ?? "",
+  "app": string(attrs.appname) ?? string(res."service.name") ?? "",
+  "severity": string(.severity_text) ?? "",
+  "body": string(.message) ?? encode_json(.message),
+  "attributes": encode_json(attrs)
+}

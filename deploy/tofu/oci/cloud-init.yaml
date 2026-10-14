@@ -1,0 +1,13 @@
+#cloud-config
+# Mount the data volume where k3s keeps local-path PVCs, then install k3s
+# (same flags as hack/install-k3s.sh). Flux is added with `make gitops`.
+bootcmd:
+  - [sh, -c, "for i in $(seq 1 60); do [ -e /dev/oracleoci/oraclevdb ] && break; sleep 5; done"]
+fs_setup:
+  - device: /dev/oracleoci/oraclevdb
+    filesystem: ext4
+    label: fibrik-data
+mounts:
+  - [LABEL=fibrik-data, /var/lib/rancher, ext4, "defaults,nofail", "0", "2"]
+runcmd:
+  - [sh, -c, "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION='${k3s_version}' INSTALL_K3S_EXEC='server --disable=traefik --write-kubeconfig-mode=0640' sh -"]

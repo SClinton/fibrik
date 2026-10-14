@@ -91,14 +91,17 @@ profile per target (`values-ci.yaml`, `values-free.yaml`,
 pinned tools into `./.bin`:
 
 ```sh
-make help                 # list targets
-make lint                 # lint and render every profile (no cluster needed)
-make kind-up deploy test  # kind cluster, install PROFILE=ci, run smoke tests
-make kind-down
+make help                          # list targets
+make lint py-lint py-test          # chart, Python and unit checks (no cluster)
+make k3d-up images k3d-load        # k3s in Docker, with locally built images
+make deploy test e2e               # install PROFILE=ci, smoke tests, syslog → ClickHouse + Iceberg
+make e2e-ui PORT_FORWARD=0         # browser test: sign in through Dex, see pipeline stats
+make k3d-down
 ```
 
-Docker must be running for kind. `make deploy PROFILE=free` installs into
-whatever cluster your current kube context points at.
+Then open <http://localhost:8080>. Docker must be running. Every host
+(Codespaces, the Mac mini, any Linux box with k3s, Flux GitOps, OCI) is
+covered in [`docs/install.md`](docs/install.md).
 
 ## Contributing
 

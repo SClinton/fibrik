@@ -15,6 +15,17 @@ caddy:
   resources:
     limits: { memory: 64Mi }
 
+# External bucket on the host cloud's S3-compatible endpoint.
+storage:
+  bucket: fibrik-lake
+  # e.g. https://<namespace>.compat.objectstorage.<region>.oraclecloud.com
+  endpoint: https://s3.example.com
+  region: us-east-1
+  # Secret with access-key-id and secret-access-key (SOPS + age).
+  existingSecret: fibrik-storage
+seaweedfs:
+  enabled: false
+
 dex:
   # Secret with GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET (SOPS + age).
   envFromSecret: fibrik-dex-github

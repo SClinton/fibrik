@@ -1,0 +1,46 @@
+# Project site: docs, specs and (later) the connector catalog, published to
+# GitHub Pages by .github/workflows/docs.yaml. `make docs` builds it.
+site_name: Fibrik
+site_description: Open Security Data Fabric for Agentic AI
+site_url: https://sclinton.github.io/fibrik/
+repo_url: https://github.com/SClinton/fibrik
+repo_name: SClinton/fibrik
+copyright: Copyright 2026 SCVenturesCo, Ltd. Apache-2.0.
+# make docs stages the repository's Markdown here (README becomes index).
+docs_dir: .site-src
+site_dir: .site
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - content.code.copy
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Specification:
+      - Requirements: requirements.md
+      - Architecture: architecture.md
+      - MVP scope: mvp-scope.md
+      - Execution plan: execution-plan.md
+      - Initial stack: initial-stack.md
+      - Connectors framework: connectors-framework.md
+      - $0 MVP: zero-cost-mvp.md
+      - AI data optimization: ai-data-optimization.md
+      - SaaS, BYOC and compute offload: saas-byoc-and-compute-offload.md
+  - Project:
+      - Contributing: CONTRIBUTING.md
+      - Free-tier ledger: free-tier-ledger.md

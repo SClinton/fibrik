@@ -34,10 +34,28 @@ spec:
           {{- if .Values.victoriametrics.enabled }}
           check "victoriametrics health" curl -fsS http://{{ include "fibrik.component" (list . "victoriametrics") }}:8428/health
           {{- end }}
+          {{- if .Values.seaweedfs.enabled }}
+          check "seaweedfs s3 port" sh -c 'curl -sS -o /dev/null http://{{ include "fibrik.component" (list . "seaweedfs") }}:8333/'
+          {{- end }}
+          {{- if .Values.otelcol.enabled }}
+          check "otelcol health" curl -fsS http://{{ include "fibrik.component" (list . "otelcol") }}-internal:13133/
+          {{- end }}
+          {{- if .Values.vector.enabled }}
+          check "vector health" curl -fsS http://{{ include "fibrik.component" (list . "vector") }}:8686/health
+          {{- end }}
+          {{- if .Values.api.enabled }}
+          check "fibrik-api ready" curl -fsS http://{{ include "fibrik.component" (list . "api") }}:8001/readyz
+          check "fibrik-api rejects anonymous stats" sh -c 'test "$(curl -s -o /dev/null -w "%{http_code}" http://{{ include "fibrik.component" (list . "api") }}:8000/v1/pipeline/stats)" = 401'
+          {{- end }}
           {{- if .Values.caddy.enabled }}
           {{- $caddy := include "fibrik.component" (list . "caddy") }}
           {{- $host := default "" .Values.caddy.domain }}
           check "caddy health" curl -fsS {{ with $host }}-H "Host: {{ . }}" {{ end }}http://{{ $caddy }}/healthz
+          {{- if and .Values.api.enabled (not $host) }}
+          check "fibrik-api via caddy" curl -fsS http://{{ $caddy }}/api/v1/info
+          check "ui via caddy" sh -c 'curl -fsS http://{{ $caddy }}/ | grep -q "<div id=\"root\">"'
+          check "ui runtime config" sh -c 'curl -fsS http://{{ $caddy }}/config.json | grep -q "\"clientId\""'
+          {{- end }}
           {{- if .Values.dex.enabled }}
           {{- if $host }}
           {{- /* With a domain set, plain HTTP redirects to HTTPS; check Dex directly. */}}

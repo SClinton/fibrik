@@ -1,0 +1,15 @@
+# Flux watches this repository; every commit on main is a deploy (GitOps).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: fibrik
+  namespace: flux-system
+spec:
+  interval: 5m0s
+  ref:
+    branch: main
+  url: https://github.com/SClinton/fibrik
+  # Only the chart matters to the cluster.
+  ignore: |
+    /*
+    !/deploy/helm/
