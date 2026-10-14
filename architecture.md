@@ -147,7 +147,7 @@ flowchart TB
 | `osdf-api` | Public API, RBAC, tenancy, audit log, proposal lifecycle | Python FastAPI + Postgres, Keycloak (OIDC), OPA (policy) | FR-API-01, NFR-SEC-* |
 | `config-service` | Pulls Git, renders OSDF YAML into engine configs (Vector TOML/YAML, ClickHouse DDL, compiled rules), validates, versions and stages rollouts | Python, Jinja/pydantic, `vector validate` | FR-PIP-01/02/13, NFR-OPS-04 |
 | `fleet-manager` | Agent and worker enrollment, grouping, config distribution, health, version rollout | Go, `opamp-go` server | FR-COL-04 |
-| `osdf-sidecar` | Runs next to every Vector/OTel process. OpAMP client: pulls config, validates locally, hot reloads, rolls back on failure, reports health | Go, `opamp-go` client | FR-COL-04, NFR-REL-02 |
+| `osdf-sidecar` | Runs next to every Vector process (OTel Collectors use their native OpAMP supervisor instead). OpAMP client: pulls config, validates locally, hot reloads, rolls back on failure, reports health | Go, `opamp-go` client | FR-COL-04, NFR-REL-02 |
 | Collector tier | Network listeners and API pullers. Writes raw to Kafka plus the raw archive | Vector (sources), OTel Collector (OTLP), declarative REST connector runner | FR-COL-* |
 | Kafka | Durable bus and persistent queue. Decouples ingest from processing and destinations | Apache Kafka (KRaft) | FR-PIP-06, NFR-REL-03 |
 | Pipeline workers | Parse, normalize to OCSF, enrich, mask, reduce, route, fan out | Vector + VRL, Presidio-derived rule packs for the guard | FR-PIP-*, FR-SCH-* |
@@ -179,7 +179,8 @@ flowchart TB
 |---|---|---|---|
 | Edge/collector/transform engine | **Vector** | MPL-2.0 | Fluent Bit (Apache-2.0) for very small footprints; OTel Collector (Apache-2.0) for OTLP-native and OpAMP-native fleets; Tenzir (executor BSD-3, but check which parts are closed) |
 | Transform language | **VRL** (Vector Remap Language) | MPL-2.0 | Chosen because it is typed, sandboxed, fast, has built-in unit tests (`vector test`), and is easy for LLMs to generate and for compilers to verify |
-| Fleet protocol | **OpAMP** (`opamp-go`) | Apache-2.0 | — |
+| Edge runtime (OTel-native fleets) | **OpenTelemetry Collector** (contrib or a custom OCB build) + OTTL | Apache-2.0 | The model BindPlane uses with its BDOT distribution. OSDF renders edge pipelines to OTel config when a group's runtime is `otelcol` (FR-COL-08) |
+| Fleet protocol | **OpAMP** (`opamp-go`) | Apache-2.0 | Proven at very large scale by BindPlane. The OTel Collector has a native OpAMP extension/supervisor, and Vector uses the `osdf-sidecar` |
 | Message bus | **Apache Kafka** (KRaft) | Apache-2.0 | Redpanda is BSL (avoid on the default path). NATS JetStream (Apache-2.0) for small deployments |
 | Object storage | **SeaweedFS** or **Ceph RGW** (prod), any S3 in cloud | Apache-2.0 / LGPL | Garage (AGPL). MinIO community edition is AGPL and moved to source-only maintenance in 2025, so avoid it as the default |
 | Table format | **Apache Iceberg** | Apache-2.0 | Delta Lake (Apache-2.0) if the Databricks ecosystem is the priority |
@@ -568,3 +569,4 @@ compresses 10–20× versus raw text.
 | ADR-07 | Agents write PRs, never config | Auditability, reversibility, reuses CI | Slower than direct writes. L2 auto-merge for low-risk changes reduces the friction |
 | ADR-08 | MCP as the only tool interface for agents | One tool surface for internal agents and external assistants, with policy enforced once | MCP spec is still changing, so pin the version |
 | ADR-09 | Python control plane, Go edge components | Speed of development plus the AI ecosystem; static binaries at the edge | Two toolchains |
+| ADR-10 | Two edge runtimes (Vector and the OTel Collector) behind one OSDF YAML and one OpAMP fleet manager | BindPlane shows that OTel + OpAMP is becoming the standard for agent fleets. Supporting it avoids rip-and-replace for OTel shops | Renderer and test matrix for two engines. Edge-side OTel pipelines support a subset of functions (filter, mask, route, enrich); OCSF mapping stays on Vector workers |

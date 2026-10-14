@@ -2,7 +2,8 @@
 
 > An open source, agentic platform for collecting and managing security data
 > and for building detections. It combines the pipeline and data management
-> of Cribl, the AI-assisted security data fabric of Databahn, and the agentic
+> of Cribl, the OpenTelemetry-native fleet and pipeline management of
+> BindPlane, the AI-assisted security data fabric of Databahn, and the agentic
 > detection engineering and triage of Anvilogic. Every component is open source.
 
 - Status: Draft v0.1
@@ -24,12 +25,14 @@ Commercial tools solve parts of this problem:
 
 - **Cribl** adds a control plane between sources and destinations, so teams can
   route, reduce, reshape and replay data.
+- **BindPlane** manages large fleets of OpenTelemetry Collectors over OpAMP,
+  with edge processing and routing. It is the default pipeline for Google SecOps.
 - **Databahn** uses AI to automate the data engineering: parsers, schema drift,
   normalization and PII masking.
 - **Anvilogic** separates detection logic from storage, compiles it to many
   query languages, and uses agents for onboarding, detection, search and triage.
 
-No open source project combines all three. OSDF fills that gap.
+No open source project combines all of this. OSDF fills that gap.
 
 ## 2. Goals and non-goals
 
@@ -175,30 +178,86 @@ tune, retire); ATT&CK coverage and data-to-detection mapping; signal-to-alert
 correlation; federated search; triage and investigation agents; composable
 agent workflows (blueprints).
 
-### 4.4 Capability matrix → OSDF modules
+### 4.4 BindPlane
 
-| Capability | Cribl | Databahn | Anvilogic | OSDF module |
-|---|:-:|:-:|:-:|---|
-| Agent/edge collection + fleet management | ● | ● | ○ | `collect` |
-| Agentless/API/cloud connectors | ● | ● | ○ | `collect` |
-| Routing, filtering, reduction | ● | ● | ○ | `pipeline` |
-| Parsing + schema normalization (OCSF) | ◐ | ● | ● | `pipeline` + `onboard-agent` |
-| PII/sensitive data masking | ● | ● | – | `pipeline` (`guard`) |
-| Persistent queues + replay | ● | ◐ | – | `pipeline` + `lake` |
-| Schema drift detection/remediation | ◐ | ● | ◐ | `health` + `drift-agent` |
-| Source health/silence/volume anomaly | ◐ | ● | ◐ | `health` |
-| Open-format data lake | ● | ◐ | ◐ (uses customer lake) | `lake` |
-| Federated search | ● | ◐ | ● | `search` |
-| NL → query | ● | ● | ● | `search-agent` |
-| Detection-as-code, multi-backend | – | – | ● | `detect` |
-| ATT&CK coverage + data↔detection graph | – | ◐ | ● | `graph` + `detect` |
-| Signal correlation → alerts | – | ◐ | ● | `detect` (`correlate`) |
-| Triage/investigation agents | ◐ | ◐ | ● | `triage-agent` |
-| Agent workflow chaining (blueprints) | ◐ | ◐ | ● | `orchestrator` |
-| MCP exposure of platform | ● | ● | ◐ | `mcp-gateway` |
-| Packs/content marketplace | ● | ◐ | ● (Armory) | `content` |
+**Company:** formerly observIQ. Dynatrace has announced a definitive agreement
+to acquire it. The closing date and any effect on the roadmap or licensing
+were not public at the time of this research.
 
-● strong, ◐ partial, ○ limited, – not a focus
+**Products:** the BindPlane control plane (server and web UI, self-hosted or
+cloud, with an Enterprise "Google Edition" bundled with Google SecOps) and the
+**BDOT Collector**. The BDOT Collector is an open source distribution of the
+OpenTelemetry Collector, built with the OpenTelemetry Collector Builder.
+
+**Architecture:**
+- A **control plane for OpenTelemetry Collectors**. It manages fleets that are
+  claimed to reach up to about 1M collectors from one instance or cluster.
+- **OpAMP** pushes configuration, manages collector versions and collects
+  health, with no SSH access to hosts. The BDOT Collector is described as the
+  first distribution to implement OpAMP.
+- A pipeline model of **sources → processors → destinations**. It runs at the
+  point of collection (on the edge collector) or on gateway collectors.
+  Processing covers filtering, sampling, deduplication, log-to-metric
+  extraction, masking/encryption of sensitive data, enrichment, and
+  routing by data type, source or policy to many destinations.
+- **Rollouts:** staged config rollouts across the fleet, with version history.
+- **Blueprints:** reusable configuration bundles. Earlier blueprints covered
+  processors only. Newer "Full-Pipeline Blueprints" cover source, processors
+  and destination.
+- **Google SecOps integration:** BindPlane is Google's recommended agent and
+  pipeline for Chronicle/SecOps ingestion. It includes a forwarder migration tool
+  and SecOps Data Processing pipelines (Preview, March 2026) that you can
+  configure from the BindPlane console or the SecOps Data Pipeline API.
+- **AI:** "Pipeline Intelligence" (November 2025) identifies log types, applies
+  parsers and optimizes configs. It claims to automate 70–80% of pipeline work
+  (vendor claim). "Global Intelligence" (around RSAC 2026) monitors pipelines
+  and recommends optimizations. Its first feature, Threat Intel Enrichment,
+  tags suspicious IPs in-stream. Both features are limited to select
+  Enterprise customers and are rolling out gradually.
+- **Licensing note:** the BDOT Collector is open source, while the BindPlane
+  server's enterprise editions are commercial. Check the current terms,
+  especially after the Dynatrace acquisition.
+
+**What it is not:** BindPlane does not host a data lake, run search, run
+detections or triage alerts. It is a pure pipeline and fleet product.
+
+**Capabilities we must match:** an OpenTelemetry-native collector option;
+**OpAMP-based fleet management at large scale** (enrollment, config
+push, version upgrades, staged rollouts, health); processing at the edge;
+full-pipeline blueprints; AI log-type identification and parser
+assignment; in-stream threat-intel enrichment; and a migration path from
+existing forwarders.
+
+**Design implication for OSDF:** BindPlane proves that OpAMP + the OTel
+Collector works as a vendor-neutral fleet model. OSDF should therefore treat the
+**OTel Collector as a first-class edge runtime next to Vector** (FR-COL-08), so
+that fleets already standardized on OpenTelemetry can adopt OSDF without
+replacing agents.
+
+### 4.5 Capability matrix → OSDF modules
+
+| Capability | Cribl | Databahn | Anvilogic | BindPlane | OSDF module |
+|---|:-:|:-:|:-:|:-:|---|
+| Agent/edge collection + fleet management | ● | ● | ○ | ● | `collect` |
+| Agentless/API/cloud connectors | ● | ● | ○ | ● | `collect` |
+| Routing, filtering, reduction | ● | ● | ○ | ● | `pipeline` |
+| Parsing + schema normalization (OCSF) | ◐ | ● | ● | ◐ | `pipeline` + `onboard-agent` |
+| PII/sensitive data masking | ● | ● | – | ● | `pipeline` (`guard`) |
+| Persistent queues + replay | ● | ◐ | – | ◐ | `pipeline` + `lake` |
+| Schema drift detection/remediation | ◐ | ● | ◐ | ? | `health` + `drift-agent` |
+| Source health/silence/volume anomaly | ◐ | ● | ◐ | ◐ | `health` |
+| Open-format data lake | ● | ◐ | ◐ (uses customer lake) | ○ (routes to lakes) | `lake` |
+| Federated search | ● | ◐ | ● | – | `search` |
+| NL → query | ● | ● | ● | ? | `search-agent` |
+| Detection-as-code, multi-backend | – | – | ● | – | `detect` |
+| ATT&CK coverage + data↔detection graph | – | ◐ | ● | – | `graph` + `detect` |
+| Signal correlation → alerts | – | ◐ | ● | – | `detect` (`correlate`) |
+| Triage/investigation agents | ◐ | ◐ | ● | – | `triage-agent` |
+| Agent workflow chaining (blueprints) | ◐ | ◐ | ● | ○ | `orchestrator` |
+| MCP exposure of platform | ● | ● | ◐ | ? | `mcp-gateway` |
+| Packs/content marketplace | ● | ◐ | ● (Armory) | ◐ (Blueprints) | `content` |
+
+● strong, ◐ partial, ○ limited, – not a focus, ? not found in public material
 
 ---
 
@@ -219,6 +278,9 @@ the tests can trace back to it.
 | FR-COL-05 | Connector SDK: a declarative YAML connector for REST APIs (auth, pagination, checkpointing, rate limits) | P1 |
 | FR-COL-06 | Tag every event at ingest with `source_id`, `tenant_id`, `collector_id`, receipt time and raw size | P0 |
 | FR-COL-07 | Buffer at the edge (disk) when downstream is unavailable | P1 |
+| FR-COL-08 | Support the **OpenTelemetry Collector** (upstream contrib or a custom OCB build) as an edge/gateway runtime alongside Vector, managed through the same OpAMP fleet manager. OSDF pipeline YAML can render to OTel Collector config (receivers/processors/exporters + OTTL) for edge-side filtering, masking and routing | P1 |
+| FR-COL-09 | **Staged rollouts** of fleet config and collector versions (canary → percentage → all), with automatic rollback on health regression and a full version history | P1 |
+| FR-COL-10 | **Forwarder migration helpers**: import existing configs (for example, Splunk UF inputs.conf, Fluent Bit, Logstash/Beats) into OSDF sources/routes as a proposal | P2 |
 
 ### 5.2 Pipeline and routing (`pipeline`)
 
@@ -237,6 +299,8 @@ the tests can trace back to it.
 | FR-PIP-11 | Shared state tier for cross-worker dedup and aggregation (optional) | P2 |
 | FR-PIP-12 | Per-route and per-function **metrics**: events/bytes in/out, drop rate, error rate, latency | P0 |
 | FR-PIP-13 | Group variables and secrets references in pipeline definitions | P1 |
+| FR-PIP-14 | **Full-pipeline blueprints**: one-click templates that create source + processing + destination together, parameterized and versioned (BindPlane-style; packaged as packs) | P1 |
+| FR-PIP-15 | **In-stream threat-intel enrichment**: tag IPs, domains and hashes against IOC feeds at the edge or worker tier, with feeds refreshed on a schedule | P1 |
 
 ### 5.3 Schema and normalization
 

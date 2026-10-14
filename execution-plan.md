@@ -403,7 +403,11 @@ Code or Claude Desktop) can connect to the OSDF MCP server and run a search.
    `vector validate`, does an atomic swap with health-check rollback, and
    reports heartbeat/version. Rollout is canary first, then the whole group.
 3. **Edge agent packaging:** sidecar + Vector for Linux (deb/rpm) and Windows
-   (MSI), enrolled with a token, buffering to disk.
+   (MSI), enrolled with a token, buffering to disk. Also support the
+   **OpenTelemetry Collector** with its OpAMP supervisor as a second edge runtime
+   (FR-COL-08). Render OSDF filter/mask/route steps to OTel processors and OTTL,
+   and connect it to the same fleet manager. This matches BindPlane's model.
+   Add staged rollouts (canary → % → all) with automatic rollback (FR-COL-09).
 4. **UI v1** (React): source inventory + health, alert queue + triage view,
    proposals (diff, checks, approve → merges the PR), detection catalog +
    ATT&CK heatmap, and copilot chat (MCP-backed).
