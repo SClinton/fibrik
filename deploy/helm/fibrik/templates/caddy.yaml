@@ -1,0 +1,137 @@
+{{- if .Values.caddy.enabled }}
+{{- $name := include "fibrik.component" (list . "caddy") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-config
+  labels:
+    {{- include "fibrik.labels" (list . "caddy") | nindent 4 }}
+data:
+  Caddyfile: |
+    {
+      # The admin API stays on localhost inside the pod; never expose it.
+      metrics
+      {{- if not .Values.caddy.domain }}
+      auto_https off
+      {{- end }}
+      {{- with .Values.caddy.acmeEmail }}
+      email {{ . }}
+      {{- end }}
+    }
+
+    {{ default ":80" .Values.caddy.domain }} {
+      encode zstd gzip
+
+      handle /healthz {
+        respond "ok" 200
+      }
+
+      {{- if .Values.dex.enabled }}
+      handle /dex/* {
+        reverse_proxy {{ include "fibrik.component" (list . "dex") }}:5556
+      }
+      {{- end }}
+
+      # The UI build is served here from week 1, day 5.
+      handle {
+        respond "Fibrik is running." 200
+      }
+    }
+
+    # Prometheus metrics for VictoriaMetrics, on a port the Service keeps
+    # inside the cluster.
+    :2020 {
+      metrics /metrics
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "caddy") | nindent 4 }}
+spec:
+  type: {{ .Values.caddy.service.type }}
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "caddy") | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    {{- if .Values.caddy.domain }}
+    - name: https
+      port: 443
+      targetPort: https
+    {{- end }}
+---
+# Metrics get their own ClusterIP Service so a LoadBalancer on the main
+# Service never publishes them.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-metrics
+  labels:
+    {{- include "fibrik.labels" (list . "caddy") | nindent 4 }}
+spec:
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "caddy") | nindent 4 }}
+  ports:
+    - name: metrics
+      port: 2020
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "caddy") | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "caddy") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "caddy") | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values.caddy | toJson | sha256sum }}
+    spec:
+      containers:
+        - name: caddy
+          image: {{ include "fibrik.image" .Values.caddy.image }}
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+            - name: metrics
+              containerPort: 2020
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+              {{- with .Values.caddy.domain }}
+              httpHeaders:
+                - name: Host
+                  value: {{ . }}
+              {{- end }}
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.caddy.resources | nindent 12 }}
+          volumeMounts:
+            # Certificates and ACME account state.
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/caddy
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}-config
+  volumeClaimTemplates:
+    {{- include "fibrik.pvc" (list . .Values.caddy.persistence.size) | nindent 4 }}
+{{- end }}

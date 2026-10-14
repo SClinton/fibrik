@@ -1,0 +1,66 @@
+{{- if .Values.lakekeeper.enabled }}
+{{- $name := include "fibrik.component" (list . "lakekeeper") }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "lakekeeper") | nindent 4 }}
+spec:
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "lakekeeper") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8181
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "lakekeeper") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "lakekeeper") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "lakekeeper") | nindent 8 }}
+    spec:
+      initContainers:
+        {{- include "fibrik.waitForPostgres" . | nindent 8 }}
+        # Schema migrations are idempotent; running them on every start keeps
+        # `helm upgrade` the only upgrade step.
+        - name: migrate
+          image: {{ include "fibrik.image" .Values.lakekeeper.image }}
+          args: ["migrate"]
+          env:
+            {{- include "fibrik.lakekeeperEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.lakekeeper.resources | nindent 12 }}
+      containers:
+        - name: lakekeeper
+          image: {{ include "fibrik.image" .Values.lakekeeper.image }}
+          args: ["serve"]
+          env:
+            {{- include "fibrik.lakekeeperEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8181
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.lakekeeper.resources | nindent 12 }}
+{{- end }}

@@ -1,0 +1,121 @@
+# Default values for the fibrik chart.
+#
+# The same chart runs on every target. Only values change:
+#   values-ci.yaml        kind in GitHub Actions (no TLS, mock login)
+#   values-free.yaml      k3s on the OCI Always Free VM (2 OCPU / 12 GB)
+#   values-standard.yaml  larger hosts
+# Nothing in this chart names a cloud provider (initial-stack.md §0).
+
+global:
+  # External URL users and agents reach Fibrik on. Used for the Dex issuer and
+  # OIDC redirect URIs. No trailing slash.
+  publicUrl: http://localhost:8080
+  # Empty uses the cluster's default StorageClass (k3s/kind: local-path).
+  storageClass: ""
+
+# Credentials. When existingSecret is empty, the chart generates random
+# values once and keeps them on upgrade. For GitOps, create the Secret with
+# SOPS + age and name it here. It must hold these keys:
+#   postgres-password, lakekeeper-db-password, lakekeeper-encryption-key,
+#   dex-db-password, dex-client-secret, clickhouse-password
+credentials:
+  existingSecret: ""
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "17.11"
+  sharedBuffers: 128MB
+  maxConnections: 100
+  persistence:
+    size: 8Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+clickhouse:
+  enabled: true
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: "25.8.33.6"
+  database: fibrik
+  user: fibrik
+  # Server-wide memory cap (bytes). Keep it below the container limit.
+  maxServerMemoryUsage: 2147483648
+  markCacheSize: 268435456
+  persistence:
+    size: 20Gi
+  resources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { memory: 2560Mi }
+
+lakekeeper:
+  enabled: true
+  image:
+    repository: quay.io/lakekeeper/catalog
+    # Not verified from the build sandbox (quay.io unreachable); CI pulls it.
+    tag: "v0.9.0"
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+victoriametrics:
+  enabled: true
+  image:
+    repository: victoriametrics/victoria-metrics
+    tag: "v1.154.0"
+  retentionPeriod: 15d
+  persistence:
+    size: 10Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+dex:
+  enabled: true
+  image:
+    repository: ghcr.io/dexidp/dex
+    tag: "v2.45.1"
+  # OIDC client for the Fibrik UI. Redirect URI is <publicUrl>/auth/callback.
+  clientId: fibrik-ui
+  # Upstream identity providers (Dex connector config). The default uses
+  # GitHub; its client ID and secret come from envFromSecret, which Dex
+  # expands from $GITHUB_CLIENT_ID and $GITHUB_CLIENT_SECRET.
+  connectors:
+    - type: github
+      id: github
+      name: GitHub
+      config:
+        clientID: $GITHUB_CLIENT_ID
+        clientSecret: $GITHUB_CLIENT_SECRET
+        redirectURI: "{{ .Values.global.publicUrl }}/dex/callback"
+  # Name of a Secret with GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.
+  envFromSecret: ""
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+caddy:
+  enabled: true
+  image:
+    repository: caddy
+    tag: "2.11.7"
+  # Hostname for automatic HTTPS (Let's Encrypt). Empty serves plain HTTP on
+  # port 80, which is what kind and k3d use.
+  domain: ""
+  # Contact email for the ACME account. Optional.
+  acmeEmail: ""
+  service:
+    # ClusterIP for kind/k3d (use port-forward); LoadBalancer on k3s (ServiceLB).
+    type: ClusterIP
+  persistence:
+    size: 1Gi
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+tests:
+  image:
+    repository: curlimages/curl
+    tag: "8.23.0"

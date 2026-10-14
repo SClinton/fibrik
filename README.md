@@ -83,6 +83,23 @@ requirements GA and §5.11, and architecture §8.6–§8.11.
    specific service per category, chosen for portability, with the
    portability proof matrix and a day-by-day plan for the first week.
 
+## Running the stack
+
+The whole platform is one Helm chart, `deploy/helm/fibrik`, with a values
+profile per target (`values-ci.yaml`, `values-free.yaml`,
+`values-standard.yaml`). Everything runs through `make`, which downloads
+pinned tools into `./.bin`:
+
+```sh
+make help                 # list targets
+make lint                 # lint and render every profile (no cluster needed)
+make kind-up deploy test  # kind cluster, install PROFILE=ci, run smoke tests
+make kind-down
+```
+
+Docker must be running for kind. `make deploy PROFILE=free` installs into
+whatever cluster your current kube context points at.
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Design reviews, real-world use cases

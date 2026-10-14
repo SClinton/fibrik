@@ -1,0 +1,15 @@
+Fibrik {{ .Chart.AppVersion }} is installed in namespace {{ .Release.Namespace }}.
+
+Run the smoke tests:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --logs
+
+{{- if .Values.caddy.domain }}
+
+Open https://{{ .Values.caddy.domain }} once DNS points at the node and
+Caddy has its certificate.
+{{- else }}
+
+Reach Fibrik from this machine:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "fibrik.component" (list . "caddy") }} 8080:80
+  open {{ .Values.global.publicUrl }}
+{{- end }}

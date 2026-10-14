@@ -1,0 +1,95 @@
+{{- if .Values.victoriametrics.enabled }}
+{{- $name := include "fibrik.component" (list . "victoriametrics") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-scrape
+  labels:
+    {{- include "fibrik.labels" (list . "victoriametrics") | nindent 4 }}
+data:
+  scrape.yaml: |
+    global:
+      scrape_interval: 30s
+    scrape_configs:
+      - job_name: victoriametrics
+        static_configs:
+          - targets: ["localhost:8428"]
+      {{- if .Values.clickhouse.enabled }}
+      - job_name: clickhouse
+        static_configs:
+          - targets: ["{{ include "fibrik.component" (list . "clickhouse") }}:9363"]
+      {{- end }}
+      {{- if .Values.caddy.enabled }}
+      - job_name: caddy
+        static_configs:
+          - targets: ["{{ include "fibrik.component" (list . "caddy") }}-metrics:2020"]
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "victoriametrics") | nindent 4 }}
+spec:
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "victoriametrics") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8428
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "victoriametrics") | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "victoriametrics") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "victoriametrics") | nindent 8 }}
+    spec:
+      containers:
+        - name: victoriametrics
+          image: {{ include "fibrik.image" .Values.victoriametrics.image }}
+          args:
+            - -storageDataPath=/storage
+            - -retentionPeriod={{ .Values.victoriametrics.retentionPeriod }}
+            - -promscrape.config=/etc/victoriametrics/scrape.yaml
+            - -memory.allowedPercent=60
+          ports:
+            - name: http
+              containerPort: 8428
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.victoriametrics.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /storage
+            - name: scrape
+              mountPath: /etc/victoriametrics
+              readOnly: true
+      volumes:
+        - name: scrape
+          configMap:
+            name: {{ $name }}-scrape
+  volumeClaimTemplates:
+    {{- include "fibrik.pvc" (list . .Values.victoriametrics.persistence.size) | nindent 4 }}
+{{- end }}
