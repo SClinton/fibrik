@@ -1,4 +1,4 @@
-# Architecture: Fibrik
+# Architecture: Fibrik, the Open Security Data Fabric for Agentic AI
 
 - Status: Draft v0.1
 - Date: 2026-10-14

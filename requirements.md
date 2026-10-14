@@ -1,4 +1,4 @@
-# Requirements: Fibrik
+# Requirements: Fibrik, the Open Security Data Fabric for Agentic AI
 
 > An open source, agentic platform for collecting and managing security data
 > and for building detections. It combines the pipeline and data management

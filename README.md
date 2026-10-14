@@ -1,6 +1,6 @@
 # Fibrik
 
-**Open source, agentic security data pipeline.** Keep the signal, cut the cost.
+**Open Security Data Fabric for Agentic AI.** Route, reduce and normalize security data with OpenTelemetry, OCSF and MCP. Keep the signal, cut the SIEM cost.
 
 Project name: **Fibrik** (formerly the working name "OpenSOC Data Fabric"). Repository: `SClinton/fibrik`.
 
