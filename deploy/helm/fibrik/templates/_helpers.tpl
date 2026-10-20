@@ -45,7 +45,7 @@ every template in one render sees the same values.
 */}}
 {{- define "fibrik.credentials" -}}
 {{- if not (hasKey .Values "_credentials") -}}
-{{- $keys := list "postgres-password" "lakekeeper-db-password" "lakekeeper-encryption-key" "dex-db-password" "dex-client-secret" "clickhouse-password" -}}
+{{- $keys := list "postgres-password" "lakekeeper-db-password" "lakekeeper-encryption-key" "dex-db-password" "dex-client-secret" "clickhouse-password" "objectstore-access-key" "objectstore-secret-key" -}}
 {{- $existing := (lookup "v1" "Secret" .Release.Namespace (include "fibrik.credentialsSecret" .)).data | default dict -}}
 {{- $out := dict -}}
 {{- range $keys -}}
@@ -104,4 +104,20 @@ every template in one render sees the same values.
   value: postgresql://lakekeeper:$(LAKEKEEPER_DB_PASSWORD)@{{ $pg }}:5432/lakekeeper
 - name: LAKEKEEPER__BASE_URI
   value: http://{{ include "fibrik.component" (list . "lakekeeper") }}:8181
+{{- end -}}
+
+{{/*
+Standard AWS-style env vars for the in-cluster S3-compatible object store,
+reused by anything that writes/reads it (the Lakekeeper warehouse bootstrap
+job, Vector's aws_s3 sink, the lake writer).
+*/}}
+{{- define "fibrik.objectstoreEnv" -}}
+{{ include "fibrik.secretEnv" (list . "AWS_ACCESS_KEY_ID" "objectstore-access-key") }}
+{{ include "fibrik.secretEnv" (list . "AWS_SECRET_ACCESS_KEY" "objectstore-secret-key") }}
+- name: AWS_REGION
+  value: us-east-1
+- name: FIBRIK_OBJECTSTORE_ENDPOINT
+  value: http://{{ include "fibrik.component" (list . "objectstore") }}:8333
+- name: FIBRIK_LAKE_BUCKET
+  value: {{ .Values.objectstore.lakeBucket | quote }}
 {{- end -}}

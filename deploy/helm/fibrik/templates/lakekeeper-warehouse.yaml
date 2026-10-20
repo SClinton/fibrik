@@ -1,0 +1,117 @@
+{{- if and .Values.objectstore.enabled .Values.lakekeeper.enabled }}
+{{- $objectstore := include "fibrik.component" (list . "objectstore") }}
+{{- $lakekeeper := include "fibrik.component" (list . "lakekeeper") }}
+# Bootstraps the Iceberg warehouse the lake writer and ClickHouse's Iceberg
+# table functions both read/write (execution-plan.md §2.3 task 1: "the
+# Lakekeeper warehouse, the S3 bucket"). Runs as a post-install/post-upgrade
+# hook so it only fires after `helm upgrade --install --wait` has the
+# objectstore and lakekeeper Services up; the wait-for-* init containers are
+# a second, defensive check against a rescheduled hook pod racing a
+# not-yet-ready dependency.
+#
+# Both steps are idempotent (create-bucket ignores "already owned by you";
+# register-warehouse treats 409 as success), so re-running this hook on
+# every `helm upgrade` -- the same approach lakekeeper.yaml's own `migrate`
+# init container already uses -- is safe.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fibrik.component" (list . "lakekeeper-warehouse") }}
+  labels:
+    {{- include "fibrik.labels" (list . "lakekeeper-warehouse") | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "1"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "lakekeeper-warehouse") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-objectstore
+          image: {{ include "fibrik.image" .Values.tests.image }}
+          command: ["sh", "-c", "until curl -s -o /dev/null http://{{ $objectstore }}:8333/; do echo waiting for objectstore; sleep 2; done"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+        - name: wait-for-lakekeeper
+          image: {{ include "fibrik.image" .Values.tests.image }}
+          command: ["sh", "-c", "until curl -fsS http://{{ $lakekeeper }}:8181/health; do echo waiting for lakekeeper; sleep 2; done"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+        - name: create-bucket
+          image: {{ include "fibrik.image" .Values.objectstore.bootstrapImage }}
+          env:
+            {{- include "fibrik.objectstoreEnv" . | nindent 12 }}
+          command: ["sh", "-c"]
+          args:
+            # us-east-1 is the one AWS region name that must NOT be passed as
+            # a LocationConstraint, which is what lets this work unmodified
+            # against SeaweedFS's S3 gateway too.
+            - |
+              set -eu
+              aws --endpoint-url "$FIBRIK_OBJECTSTORE_ENDPOINT" s3api create-bucket \
+                --bucket "$FIBRIK_LAKE_BUCKET" 2>&1 | tee /tmp/create-bucket.log || true
+              grep -q BucketAlreadyOwnedByYou /tmp/create-bucket.log && exit 0
+              aws --endpoint-url "$FIBRIK_OBJECTSTORE_ENDPOINT" s3api head-bucket --bucket "$FIBRIK_LAKE_BUCKET"
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+      containers:
+        - name: register-warehouse
+          image: {{ include "fibrik.image" .Values.tests.image }}
+          env:
+            {{- include "fibrik.objectstoreEnv" . | nindent 12 }}
+          command: ["sh", "-c"]
+          args:
+            # Request shape per Lakekeeper's Management API
+            # (docs.lakekeeper.io/docs/nightly/storage-s3/): flavor
+            # "s3-compat" for a non-AWS S3 endpoint, sts-enabled false since
+            # this uses a static access-key credential, not STS (which
+            # SeaweedFS doesn't implement). path-style-access: SeaweedFS's S3
+            # gateway only serves path-style ("http://host/bucket/key"), not
+            # virtual-hosted-style subdomains.
+            - |
+              set -eu
+              # No heredoc here -- its terminator would inherit this YAML
+              # block's indentation and never match (see objectstore.yaml's
+              # identical note). A double-quoted string tolerates embedded
+              # newlines and expands $VARS the same way.
+              body="{
+                \"warehouse-name\": \"gold\",
+                \"storage-credential\": {
+                  \"type\": \"s3\",
+                  \"credential-type\": \"access-key\",
+                  \"aws-access-key-id\": \"$AWS_ACCESS_KEY_ID\",
+                  \"aws-secret-access-key\": \"$AWS_SECRET_ACCESS_KEY\"
+                },
+                \"storage-profile\": {
+                  \"type\": \"s3\",
+                  \"flavor\": \"s3-compat\",
+                  \"bucket\": \"$FIBRIK_LAKE_BUCKET\",
+                  \"region\": \"$AWS_REGION\",
+                  \"endpoint\": \"$FIBRIK_OBJECTSTORE_ENDPOINT\",
+                  \"path-style-access\": true,
+                  \"sts-enabled\": false,
+                  \"key-prefix\": \"gold\"
+                },
+                \"delete-profile\": { \"type\": \"hard\" }
+              }"
+              http_code=$(curl -sS -o /tmp/warehouse-response.json -w "%{http_code}" \
+                -X POST "http://{{ $lakekeeper }}:8181/management/v1/warehouse" \
+                -H "Content-Type: application/json" -d "$body")
+              cat /tmp/warehouse-response.json; echo
+              case "$http_code" in
+                2??) echo "warehouse created"; exit 0 ;;
+                409) echo "warehouse already exists"; exit 0 ;;
+                *) echo "unexpected status $http_code"; exit 1 ;;
+              esac
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+{{- end }}

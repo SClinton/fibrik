@@ -17,7 +17,8 @@ global:
 # values once and keeps them on upgrade. For GitOps, create the Secret with
 # SOPS + age and name it here. It must hold these keys:
 #   postgres-password, lakekeeper-db-password, lakekeeper-encryption-key,
-#   dex-db-password, dex-client-secret, clickhouse-password
+#   dex-db-password, dex-client-secret, clickhouse-password,
+#   objectstore-access-key, objectstore-secret-key
 credentials:
   existingSecret: ""
 
@@ -49,6 +50,24 @@ clickhouse:
   resources:
     requests: { cpu: 250m, memory: 1Gi }
     limits: { memory: 2560Mi }
+
+objectstore:
+  enabled: true
+  image:
+    repository: chrislusf/seaweedfs
+    tag: "3.97"
+  # Iceberg warehouse bucket the lakekeeper-warehouse job creates and
+  # registers with Lakekeeper (see lakekeeper-warehouse.yaml).
+  lakeBucket: fibrik-lake
+  # Used only by the lakekeeper-warehouse hook's create-bucket init container.
+  bootstrapImage:
+    repository: amazon/aws-cli
+    tag: "2.38.3"
+  persistence:
+    size: 10Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
 
 lakekeeper:
   enabled: true
@@ -114,6 +133,28 @@ caddy:
   resources:
     requests: { cpu: 20m, memory: 32Mi }
     limits: { memory: 128Mi }
+
+vector:
+  enabled: true
+  image:
+    repository: timberio/vector
+    tag: "0.49.0-debian"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+lakeWriter:
+  enabled: true
+  # Not published to GHCR yet (see Dockerfile's header comment) -- built
+  # locally and `kind load docker-image`d by `make kind-load-images`, which
+  # `make ci-kind` now depends on. Point this at a real registry path once
+  # CI builds and pushes it.
+  image:
+    repository: fibrik
+    tag: "dev"
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
 
 tests:
   image:

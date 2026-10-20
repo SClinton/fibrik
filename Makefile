@@ -22,6 +22,8 @@ PROFILE      ?= ci
 KIND_CLUSTER ?= fibrik
 TIMEOUT      ?= 15m
 PROFILES     := ci free standard
+# Must match deploy/helm/fibrik/values.yaml's lakeWriter.image.
+IMAGE        ?= fibrik:dev
 
 # ---- Tools, installed into ./.bin ----------------------------------------
 BIN  := $(CURDIR)/.bin
@@ -95,6 +97,19 @@ kind-up: $(KIND) $(KUBECTL) ## Create the kind cluster (idempotent)
 kind-down: $(KIND) ## Delete the kind cluster
 	$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+# ---- Images -----------------------------------------------------------------
+# Not published to GHCR yet (Dockerfile's header comment) -- these two
+# targets are the local/CI equivalent: build once, load straight into
+# whatever kind cluster is current, no registry involved.
+
+.PHONY: build-images
+build-images: ## Build the fibrik image locally (tag: $(IMAGE))
+	docker build -t $(IMAGE) .
+
+.PHONY: kind-load-images
+kind-load-images: $(KIND) build-images ## Build the fibrik image and load it into the kind cluster
+	$(KIND) load docker-image $(IMAGE) --name $(KIND_CLUSTER)
+
 # ---- Deploy and test (current kube context) -------------------------------
 
 .PHONY: deploy
@@ -107,6 +122,33 @@ deploy: $(HELM) ## Install or upgrade the chart with PROFILE into the current co
 .PHONY: test
 test: $(HELM) ## Run the chart's smoke tests (helm test)
 	$(HELM) test $(RELEASE) --namespace $(NAMESPACE) --logs --timeout 5m
+
+# ---- Data-plane walking skeleton checks ------------------------------------
+# Both run the fibrik image's own `seed`/`e2e` CLI commands as an ephemeral
+# in-cluster pod (execution-plan.md §2.3 tasks 4-5) -- they need to reach
+# Vector/ClickHouse/Lakekeeper by Service name, which only resolves inside
+# the cluster. `openssl base64 -d` (not `base64 -d`/`-D`) because GNU and BSD
+# base64 use opposite decode flags and this Makefile has to work on both a
+# GitHub Actions runner and a Mac mini (initial-stack.md §9).
+SEED_EVENTS ?= 20
+
+.PHONY: seed
+seed: $(KUBECTL) ## Send SEED_EVENTS synthetic sshd events into Vector
+	$(KUBECTL) run fibrik-seed-$$(date +%s) --rm -i --restart=Never --namespace $(NAMESPACE) \
+	  --image=$(IMAGE) --image-pull-policy=IfNotPresent \
+	  --env="VECTOR_HOST=$(RELEASE)-vector" \
+	  -- seed --events $(SEED_EVENTS)
+
+.PHONY: e2e
+e2e: $(KUBECTL) ## E2E: seed events, assert they land in ClickHouse and Iceberg
+	@pw=$$($(KUBECTL) get secret $(RELEASE)-credentials -n $(NAMESPACE) -o jsonpath='{.data.clickhouse-password}' | openssl base64 -d); \
+	$(KUBECTL) run fibrik-e2e-$$(date +%s) --rm -i --restart=Never --namespace $(NAMESPACE) \
+	  --image=$(IMAGE) --image-pull-policy=IfNotPresent \
+	  --env="VECTOR_HOST=$(RELEASE)-vector" \
+	  --env="CLICKHOUSE_HOST=$(RELEASE)-clickhouse" \
+	  --env="CLICKHOUSE_PASSWORD=$$pw" \
+	  --env="LAKEKEEPER_URI=http://$(RELEASE)-lakekeeper:8181/catalog/" \
+	  -- e2e --events $(SEED_EVENTS)
 
 .PHONY: diag
 diag: $(KUBECTL) ## Print pods, events and recent logs (for failed runs)
@@ -123,7 +165,7 @@ diag: $(KUBECTL) ## Print pods, events and recent logs (for failed runs)
 ci-lint: lint ## CI: chart checks
 
 .PHONY: ci-kind
-ci-kind: kind-up deploy test ## CI: deploy PROFILE=ci to a fresh kind cluster and run smoke tests
+ci-kind: kind-up kind-load-images deploy test e2e ## CI: deploy PROFILE=ci to a fresh kind cluster, run smoke tests and the data-plane e2e check
 
 .PHONY: clean
 clean: ## Remove downloaded tools

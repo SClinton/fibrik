@@ -1,0 +1,65 @@
+{{- if and .Values.lakeWriter.enabled .Values.clickhouse.enabled .Values.lakekeeper.enabled }}
+{{- $name := include "fibrik.component" (list . "lake-writer") }}
+{{- $clickhouse := include "fibrik.component" (list . "clickhouse") }}
+{{- $lakekeeper := include "fibrik.component" (list . "lakekeeper") }}
+# `fibrik lake write` (fibrik/lake/writer.py, execution-plan.md §2.3 task 3):
+# polls ClickHouse's ocsf_* tables and appends new rows to Iceberg via the
+# Lakekeeper REST catalog. Runs after the lakekeeper-warehouse hook has
+# registered the "gold" warehouse (same wait-for-* pattern, not a hard
+# dependency Helm can express directly).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "lake-writer") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "lake-writer") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "lake-writer") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: wait-for-clickhouse
+          image: {{ include "fibrik.image" .Values.tests.image }}
+          command: ["sh", "-c", "until curl -fsS http://{{ $clickhouse }}:8123/ping; do echo waiting for clickhouse; sleep 2; done"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+        - name: wait-for-lakekeeper-warehouse
+          image: {{ include "fibrik.image" .Values.tests.image }}
+          command: ["sh", "-c", "until curl -fsS http://{{ $lakekeeper }}:8181/health; do echo waiting for lakekeeper; sleep 2; done"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+      containers:
+        - name: lake-writer
+          image: {{ include "fibrik.image" .Values.lakeWriter.image }}
+          args: ["lake", "write"]
+          env:
+            - name: CLICKHOUSE_HOST
+              value: {{ $clickhouse | quote }}
+            - name: CLICKHOUSE_PORT
+              value: "8123"
+            - name: CLICKHOUSE_USER
+              value: {{ .Values.clickhouse.user | quote }}
+            {{- include "fibrik.secretEnv" (list . "CLICKHOUSE_PASSWORD" "clickhouse-password") | nindent 12 }}
+            - name: CLICKHOUSE_DATABASE
+              value: {{ .Values.clickhouse.database | quote }}
+            - name: LAKEKEEPER_URI
+              value: "http://{{ $lakekeeper }}:8181/catalog/"
+            - name: LAKEKEEPER_WAREHOUSE
+              value: "gold"
+          resources:
+            {{- toYaml .Values.lakeWriter.resources | nindent 12 }}
+          # No readiness/liveness probe: no HTTP port, and python:3.12-slim
+          # doesn't ship `pgrep`/procps for an exec-based one. A crashed
+          # process already gets Kubernetes' normal restart-on-exit; a
+          # genuinely wedged-but-still-running process isn't detectable
+          # without first adding a real health signal (e.g. a /tmp heartbeat
+          # file touched each pass) -- a reasonable follow-up, not done here.
+{{- end }}
