@@ -9,10 +9,10 @@
 # a second, defensive check against a rescheduled hook pod racing a
 # not-yet-ready dependency.
 #
-# Both steps are idempotent (create-bucket ignores "already owned by you";
-# register-warehouse treats 409 as success), so re-running this hook on
-# every `helm upgrade` -- the same approach lakekeeper.yaml's own `migrate`
-# init container already uses -- is safe.
+# Every step is idempotent (bootstrap and register-warehouse both treat 409
+# as success; create-bucket ignores "already owned by you"), so re-running
+# this hook on every `helm upgrade` -- the same approach lakekeeper.yaml's
+# own `migrate` init container already uses -- is safe.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -78,6 +78,24 @@ spec:
             # virtual-hosted-style subdomains.
             - |
               set -eu
+              # A fresh Lakekeeper server refuses every warehouse/project
+              # call with 404 ProjectNotFound until it's bootstrapped --
+              # found the hard way via a real CI run, not in the warehouse
+              # docs (docs.lakekeeper.io/docs/nightly/bootstrap/). Bootstrap
+              # also creates the default (NIL-id) project automatically
+              # (LAKEKEEPER__ENABLE_DEFAULT_PROJECT defaults to on, and
+              # lakekeeper.yaml doesn't override it), so no separate project
+              # call is needed. No Authorization header: this deployment has
+              # no OIDC/auth configured, so Lakekeeper runs in open mode.
+              bootstrap_code=$(curl -sS -o /tmp/bootstrap-response.json -w "%{http_code}" \
+                -X POST "http://{{ $lakekeeper }}:8181/management/v1/bootstrap" \
+                -H "Content-Type: application/json" -d '{"accept-terms-of-use": true}')
+              cat /tmp/bootstrap-response.json; echo
+              case "$bootstrap_code" in
+                2??) echo "lakekeeper bootstrapped" ;;
+                409) echo "lakekeeper already bootstrapped" ;;
+                *) echo "unexpected bootstrap status $bootstrap_code"; exit 1 ;;
+              esac
               # No heredoc here -- its terminator would inherit this YAML
               # block's indentation and never match (see objectstore.yaml's
               # identical note). A double-quoted string tolerates embedded
