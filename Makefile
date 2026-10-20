@@ -127,9 +127,12 @@ test: $(HELM) ## Run the chart's smoke tests (helm test)
 # Both run the fibrik image's own `seed`/`e2e` CLI commands as an ephemeral
 # in-cluster pod (execution-plan.md §2.3 tasks 4-5) -- they need to reach
 # Vector/ClickHouse/Lakekeeper by Service name, which only resolves inside
-# the cluster. `openssl base64 -d` (not `base64 -d`/`-D`) because GNU and BSD
-# base64 use opposite decode flags and this Makefile has to work on both a
-# GitHub Actions runner and a Mac mini (initial-stack.md §9).
+# the cluster. Decoding the credentials Secret's clickhouse-password through
+# kubectl's own go-template `base64decode` (not a shell pipe to `base64 -d`/
+# `-D`/`openssl base64 -d`) sidesteps every GNU-vs-BSD-vs-missing-binary
+# portability question in one step -- this Makefile has to work on both a
+# GitHub Actions runner and a Mac mini (initial-stack.md §9), and kubectl
+# itself is the one tool already guaranteed present on both.
 SEED_EVENTS ?= 20
 
 .PHONY: seed
@@ -141,7 +144,11 @@ seed: $(KUBECTL) ## Send SEED_EVENTS synthetic sshd events into Vector
 
 .PHONY: e2e
 e2e: $(KUBECTL) ## E2E: seed events, assert they land in ClickHouse and Iceberg
-	@pw=$$($(KUBECTL) get secret $(RELEASE)-credentials -n $(NAMESPACE) -o jsonpath='{.data.clickhouse-password}' | openssl base64 -d); \
+	@pw=$$($(KUBECTL) get secret $(RELEASE)-credentials -n $(NAMESPACE) -o go-template='{{.data.clickhouse-password | base64decode}}'); \
+	if [ -z "$$pw" ]; then \
+	  echo "e2e: empty clickhouse-password from secret $(RELEASE)-credentials -- aborting before a confusing in-container failure" >&2; \
+	  exit 1; \
+	fi; \
 	$(KUBECTL) run fibrik-e2e-$$(date +%s) --rm -i --restart=Never --namespace $(NAMESPACE) \
 	  --image=$(IMAGE) --image-pull-policy=IfNotPresent \
 	  --env="VECTOR_HOST=$(RELEASE)-vector" \
