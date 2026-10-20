@@ -64,14 +64,47 @@ def _clickhouse_client(cfg: LakeWriterConfig):
     )
 
 
-def _iceberg_catalog(cfg: LakeWriterConfig):
-    return load_catalog(
+def _iceberg_catalog(cfg: LakeWriterConfig, retries: int = 6, retry_seconds: float = 5.0):
+    """load_catalog() itself doesn't make a network call -- PyIceberg only
+    actually hits Lakekeeper's GetConfig endpoint lazily, on the catalog's
+    first real operation. A real CI run hit a 404 "WarehouseNotFound" on
+    that very first call immediately after `helm upgrade --install --wait`
+    returned, for a warehouse a plain curl from inside the same cluster
+    could already fetch successfully (confirmed directly: same request,
+    0 ms apart, 200 OK) -- the most likely explanation is a short
+    propagation gap between the post-install hook Job reporting complete
+    and Lakekeeper's own read path (e.g. a pooled read replica/cache) truly
+    seeing the new row, not a logic bug in the warehouse lookup itself.
+    Retrying the handshake with backoff is the standard fix for exactly
+    this kind of just-created-but-not-yet-visible race, and is harmless
+    once the race window has passed (later calls just succeed first try).
+    """
+    catalog = load_catalog(
         "fibrik",
         **{
             "uri": cfg.lakekeeper_uri,
             "warehouse": f"{LAKEKEEPER_DEFAULT_PROJECT_ID}/{cfg.lakekeeper_warehouse}",
         },
     )
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            catalog.list_namespaces()
+            return catalog
+        except Exception as e:  # noqa: BLE001 -- deliberately broad: any
+            # failure here means "not ready yet," not a reason to pick
+            # apart exception types we can't be sure PyIceberg will keep
+            # raising the same way across versions.
+            last_error = e
+            logger.warning(
+                "lake writer: catalog handshake attempt %d/%d failed (%s), retrying in %.0fs",
+                attempt, retries, e, retry_seconds,
+            )
+            if attempt < retries:
+                time.sleep(retry_seconds)
+    raise RuntimeError(
+        f"lake writer: catalog handshake failed after {retries} attempts"
+    ) from last_error
 
 
 def _get_watermark(client, table: str):

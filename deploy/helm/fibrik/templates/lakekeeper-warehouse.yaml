@@ -125,26 +125,10 @@ spec:
                 -H "Content-Type: application/json" -d "$body")
               cat /tmp/warehouse-response.json; echo
               case "$http_code" in
-                2??) echo "warehouse created" ;;
-                409) echo "warehouse already exists" ;;
+                2??) echo "warehouse created"; exit 0 ;;
+                409) echo "warehouse already exists"; exit 0 ;;
                 *) echo "unexpected status $http_code"; exit 1 ;;
               esac
-              # Temporary diagnostics for a real, still-open 404 from
-              # PyIceberg's GetConfig handshake against a warehouse that
-              # demonstrably exists (see fibrik/lake/writer.py's comment) --
-              # remove once the actual cause is confirmed and fixed. Prints
-              # what Lakekeeper itself reports right after creation, from
-              # the same pod, so there's no cross-pod timing question.
-              echo "--- diag: list warehouses (Management API) ---"
-              curl -sS "http://{{ $lakekeeper }}:8181/management/v1/warehouse"; echo
-              echo "--- diag: list warehouses, explicit default project ---"
-              curl -sS "http://{{ $lakekeeper }}:8181/management/v1/warehouse?projectId=00000000-0000-0000-0000-000000000000"; echo
-              echo "--- diag: server-info ---"
-              curl -sS "http://{{ $lakekeeper }}:8181/management/v1/info"; echo
-              echo "--- diag: GetConfig with project-prefixed warehouse (what writer.py sends) ---"
-              curl -sS -w "\nhttp_code=%{http_code}\n" "http://{{ $lakekeeper }}:8181/catalog/v1/config?warehouse=00000000-0000-0000-0000-000000000000/gold"
-              echo "--- diag: GetConfig with bare warehouse name ---"
-              curl -sS -w "\nhttp_code=%{http_code}\n" "http://{{ $lakekeeper }}:8181/catalog/v1/config?warehouse=gold"
           resources:
             requests: { cpu: 10m, memory: 32Mi }
             limits: { memory: 128Mi }
