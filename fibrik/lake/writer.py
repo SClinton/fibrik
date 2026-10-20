@@ -54,26 +54,32 @@ def _clickhouse_client(cfg: LakeWriterConfig):
 
 
 def _iceberg_catalog(cfg: LakeWriterConfig, retries: int = 6, retry_seconds: float = 5.0):
-    """Multiple real CI runs hit a persistent 404 "WarehouseNotFound" here
-    when the warehouse identifier was prefixed with Lakekeeper's default
-    project id (`<project>/<name>`, per request_project.rs's
-    WarehouseReference::Project) -- even with a 6-attempt/30s retry loop
-    around the whole catalog construction (not just a later call; an
-    earlier version of this retry wrapped list_namespaces() only, on the
-    wrong assumption that load_catalog() makes no network call itself --
-    it does, eagerly, in RestCatalog.__init__ -> _fetch_config()).
+    """The actual root cause, after three wrong guesses (a project-id
+    prefix that wasn't needed; a retry loop that didn't retry the right
+    call; a URL-encoding theory never actually isolated): PyIceberg's
+    RestCatalog sends `Authorization: Bearer None` on every request,
+    including this one, whenever no credential/token is configured --
+    `LegacyOAuth2AuthManager.auth_header()` does an unguarded
+    `f"Bearer {self._token}"` with `self._token` still `None`
+    (pyiceberg/catalog/rest/auth.py). curl, which has no such default,
+    never sends an Authorization header at all for the exact same
+    request -- confirmed directly with a local HTTP server that echoes
+    back the Authorization header it receives: PyIceberg sent
+    `'Bearer None'`; curl against the same byte-identical GetConfig
+    request sent none. Lakekeeper's own authn middleware evidently
+    doesn't fall through to the same anonymous-default-project path for
+    an unparseable-but-present bearer token the way it does for no
+    token at all, so the warehouse lookup resolves a different (and
+    empty) project and 404s.
 
-    A direct curl from inside the cluster proved both forms resolve
-    correctly server-side -- `?warehouse=<project>/<name>` AND the bare
-    `?warehouse=<name>` both returned 200 with the right warehouse-id, so
-    the project prefix was never actually necessary: Lakekeeper's own
-    `require_project_id`/`preferred_project_id` already falls back to the
-    default project when the warehouse argument carries no project part at
-    all. Dropping the prefix sidesteps whatever specific difference there
-    is between that curl test (a literal `/`, not pre-escaped) and
-    PyIceberg's own request (requests' `params=` encodes `/` as `%2F`),
-    which was never actually isolated -- the simpler, already-proven-to-work
-    form was the better fix regardless of which exact encoding path broke.
+    Fixed by explicitly selecting PyIceberg's `NoopAuthManager` (`auth:
+    {type: noop}`), which returns `None` from `auth_header()` --
+    `AuthManagerAdapter.__call__` only sets the header at all when
+    `auth_header()` is truthy, so this is the one config that actually
+    sends zero Authorization header, matching curl. The retry loop
+    (originally added to explain the first, wrong, propagation-race
+    theory) stays: harmless, and still real insurance against an
+    actual not-ready-yet race on first deploy.
     """
     last_error = None
     for attempt in range(1, retries + 1):
@@ -83,6 +89,7 @@ def _iceberg_catalog(cfg: LakeWriterConfig, retries: int = 6, retry_seconds: flo
                 **{
                     "uri": cfg.lakekeeper_uri,
                     "warehouse": cfg.lakekeeper_warehouse,
+                    "auth": {"type": "noop"},
                 },
             )
         except Exception as e:  # noqa: BLE001 -- deliberately broad: any
