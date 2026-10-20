@@ -28,17 +28,6 @@ logger = logging.getLogger("fibrik.lake")
 
 GOLD_NAMESPACE = "gold"
 
-# Lakekeeper's default project id when LAKEKEEPER__ENABLE_DEFAULT_PROJECT is
-# on (the default, unchanged by this chart) and no default_project_id is
-# configured (also unchanged) -- confirmed in Lakekeeper's own source
-# (crates/lakekeeper/src/config.rs's resolve_default_project_id), not in its
-# published docs. Found the hard way: a real CI run 404'd on
-# `GET /catalog/v1/config?warehouse=gold` even though the warehouse
-# genuinely existed, because that endpoint requires `<project>/<name>` when
-# no `x-project-id` header is sent (there is no auth configured here to
-# supply one) -- see request_project.rs's WarehouseReference::Project.
-LAKEKEEPER_DEFAULT_PROJECT_ID = "00000000-0000-0000-0000-000000000000"
-
 
 @dataclass
 class LakeWriterConfig:
@@ -65,20 +54,26 @@ def _clickhouse_client(cfg: LakeWriterConfig):
 
 
 def _iceberg_catalog(cfg: LakeWriterConfig, retries: int = 6, retry_seconds: float = 5.0):
-    """A real CI run hit a 404 "WarehouseNotFound" on the very first call
-    after `helm upgrade --install --wait` returned, for a warehouse a plain
-    curl from inside the same cluster could already fetch successfully
-    (confirmed directly: same request, 0 ms apart, 200 OK) -- the most
-    likely explanation is a short propagation gap between the post-install
-    hook Job reporting complete and Lakekeeper's own read path truly seeing
-    the new row, not a logic bug in the warehouse lookup itself.
+    """Multiple real CI runs hit a persistent 404 "WarehouseNotFound" here
+    when the warehouse identifier was prefixed with Lakekeeper's default
+    project id (`<project>/<name>`, per request_project.rs's
+    WarehouseReference::Project) -- even with a 6-attempt/30s retry loop
+    around the whole catalog construction (not just a later call; an
+    earlier version of this retry wrapped list_namespaces() only, on the
+    wrong assumption that load_catalog() makes no network call itself --
+    it does, eagerly, in RestCatalog.__init__ -> _fetch_config()).
 
-    The first fix attempt wrapped only a later list_namespaces() call in a
-    retry loop, on the assumption that load_catalog() itself makes no
-    network call -- wrong, confirmed by the next CI run's traceback:
-    RestCatalog.__init__ calls self._fetch_config() eagerly, so the 404 was
-    thrown by load_catalog() itself, before the retry loop was ever
-    reached. This version retries the whole construction instead.
+    A direct curl from inside the cluster proved both forms resolve
+    correctly server-side -- `?warehouse=<project>/<name>` AND the bare
+    `?warehouse=<name>` both returned 200 with the right warehouse-id, so
+    the project prefix was never actually necessary: Lakekeeper's own
+    `require_project_id`/`preferred_project_id` already falls back to the
+    default project when the warehouse argument carries no project part at
+    all. Dropping the prefix sidesteps whatever specific difference there
+    is between that curl test (a literal `/`, not pre-escaped) and
+    PyIceberg's own request (requests' `params=` encodes `/` as `%2F`),
+    which was never actually isolated -- the simpler, already-proven-to-work
+    form was the better fix regardless of which exact encoding path broke.
     """
     last_error = None
     for attempt in range(1, retries + 1):
@@ -87,7 +82,7 @@ def _iceberg_catalog(cfg: LakeWriterConfig, retries: int = 6, retry_seconds: flo
                 "fibrik",
                 **{
                     "uri": cfg.lakekeeper_uri,
-                    "warehouse": f"{LAKEKEEPER_DEFAULT_PROJECT_ID}/{cfg.lakekeeper_warehouse}",
+                    "warehouse": cfg.lakekeeper_warehouse,
                 },
             )
         except Exception as e:  # noqa: BLE001 -- deliberately broad: any
