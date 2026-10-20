@@ -65,32 +65,31 @@ def _clickhouse_client(cfg: LakeWriterConfig):
 
 
 def _iceberg_catalog(cfg: LakeWriterConfig, retries: int = 6, retry_seconds: float = 5.0):
-    """load_catalog() itself doesn't make a network call -- PyIceberg only
-    actually hits Lakekeeper's GetConfig endpoint lazily, on the catalog's
-    first real operation. A real CI run hit a 404 "WarehouseNotFound" on
-    that very first call immediately after `helm upgrade --install --wait`
-    returned, for a warehouse a plain curl from inside the same cluster
-    could already fetch successfully (confirmed directly: same request,
-    0 ms apart, 200 OK) -- the most likely explanation is a short
-    propagation gap between the post-install hook Job reporting complete
-    and Lakekeeper's own read path (e.g. a pooled read replica/cache) truly
-    seeing the new row, not a logic bug in the warehouse lookup itself.
-    Retrying the handshake with backoff is the standard fix for exactly
-    this kind of just-created-but-not-yet-visible race, and is harmless
-    once the race window has passed (later calls just succeed first try).
+    """A real CI run hit a 404 "WarehouseNotFound" on the very first call
+    after `helm upgrade --install --wait` returned, for a warehouse a plain
+    curl from inside the same cluster could already fetch successfully
+    (confirmed directly: same request, 0 ms apart, 200 OK) -- the most
+    likely explanation is a short propagation gap between the post-install
+    hook Job reporting complete and Lakekeeper's own read path truly seeing
+    the new row, not a logic bug in the warehouse lookup itself.
+
+    The first fix attempt wrapped only a later list_namespaces() call in a
+    retry loop, on the assumption that load_catalog() itself makes no
+    network call -- wrong, confirmed by the next CI run's traceback:
+    RestCatalog.__init__ calls self._fetch_config() eagerly, so the 404 was
+    thrown by load_catalog() itself, before the retry loop was ever
+    reached. This version retries the whole construction instead.
     """
-    catalog = load_catalog(
-        "fibrik",
-        **{
-            "uri": cfg.lakekeeper_uri,
-            "warehouse": f"{LAKEKEEPER_DEFAULT_PROJECT_ID}/{cfg.lakekeeper_warehouse}",
-        },
-    )
     last_error = None
     for attempt in range(1, retries + 1):
         try:
-            catalog.list_namespaces()
-            return catalog
+            return load_catalog(
+                "fibrik",
+                **{
+                    "uri": cfg.lakekeeper_uri,
+                    "warehouse": f"{LAKEKEEPER_DEFAULT_PROJECT_ID}/{cfg.lakekeeper_warehouse}",
+                },
+            )
         except Exception as e:  # noqa: BLE001 -- deliberately broad: any
             # failure here means "not ready yet," not a reason to pick
             # apart exception types we can't be sure PyIceberg will keep
