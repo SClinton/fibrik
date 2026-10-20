@@ -24,6 +24,15 @@ metadata:
     {{- include "fibrik.labels" (list . "vector") | nindent 4 }}
 data:
   vector.yaml: |
+    # api.address, not a vector CLI flag -- an earlier version of this file
+    # passed --api-addr on the container's args, which doesn't exist as a
+    # top-level vector flag ("error: unexpected argument '--api-addr'
+    # found"), confirmed the hard way via a real CI run (see the PR this
+    # landed in). The readiness/liveness probes below hit this port.
+    api:
+      enabled: true
+      address: "0.0.0.0:8686"
+
     sources:
       syslog_udp:
         type: syslog
@@ -261,12 +270,12 @@ spec:
         {{- include "fibrik.labels" (list . "vector") | nindent 8 }}
       annotations:
         checksum/config: {{ .Values.vector | toJson | sha256sum }}
-        checksum/schema: "1"
+        checksum/schema: "2"
     spec:
       containers:
         - name: vector
           image: {{ include "fibrik.image" .Values.vector.image }}
-          args: ["--config", "/etc/vector/vector.yaml", "--api-addr", "0.0.0.0:8686"]
+          args: ["--config", "/etc/vector/vector.yaml"]
           env:
             {{- include "fibrik.secretEnv" (list . "CLICKHOUSE_PASSWORD" "clickhouse-password") | nindent 12 }}
             {{- include "fibrik.secretEnv" (list . "AWS_ACCESS_KEY_ID" "objectstore-access-key") | nindent 12 }}
