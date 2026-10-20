@@ -144,7 +144,7 @@ seed: $(KUBECTL) ## Send SEED_EVENTS synthetic sshd events into Vector
 
 .PHONY: e2e
 e2e: $(KUBECTL) ## E2E: seed events, assert they land in ClickHouse and Iceberg
-	@pw=$$($(KUBECTL) get secret $(RELEASE)-credentials -n $(NAMESPACE) -o go-template='{{.data.clickhouse-password | base64decode}}'); \
+	@pw=$$($(KUBECTL) get secret $(RELEASE)-credentials -n $(NAMESPACE) -o go-template='{{index .data "clickhouse-password" | base64decode}}'); \
 	if [ -z "$$pw" ]; then \
 	  echo "e2e: empty clickhouse-password from secret $(RELEASE)-credentials -- aborting before a confusing in-container failure" >&2; \
 	  exit 1; \
