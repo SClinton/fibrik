@@ -28,6 +28,17 @@ logger = logging.getLogger("fibrik.lake")
 
 GOLD_NAMESPACE = "gold"
 
+# Lakekeeper's default project id when LAKEKEEPER__ENABLE_DEFAULT_PROJECT is
+# on (the default, unchanged by this chart) and no default_project_id is
+# configured (also unchanged) -- confirmed in Lakekeeper's own source
+# (crates/lakekeeper/src/config.rs's resolve_default_project_id), not in its
+# published docs. Found the hard way: a real CI run 404'd on
+# `GET /catalog/v1/config?warehouse=gold` even though the warehouse
+# genuinely existed, because that endpoint requires `<project>/<name>` when
+# no `x-project-id` header is sent (there is no auth configured here to
+# supply one) -- see request_project.rs's WarehouseReference::Project.
+LAKEKEEPER_DEFAULT_PROJECT_ID = "00000000-0000-0000-0000-000000000000"
+
 
 @dataclass
 class LakeWriterConfig:
@@ -58,7 +69,7 @@ def _iceberg_catalog(cfg: LakeWriterConfig):
         "fibrik",
         **{
             "uri": cfg.lakekeeper_uri,
-            "warehouse": cfg.lakekeeper_warehouse,
+            "warehouse": f"{LAKEKEEPER_DEFAULT_PROJECT_ID}/{cfg.lakekeeper_warehouse}",
         },
     )
 
