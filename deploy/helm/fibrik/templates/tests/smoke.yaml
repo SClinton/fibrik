@@ -34,6 +34,16 @@ spec:
           {{- if .Values.victoriametrics.enabled }}
           check "victoriametrics health" curl -fsS http://{{ include "fibrik.component" (list . "victoriametrics") }}:8428/health
           {{- end }}
+          {{- if .Values.vector.enabled }}
+          check "vector health" curl -fsS http://{{ include "fibrik.component" (list . "vector") }}:8686/health
+          {{- end }}
+          {{- if .Values.objectstore.enabled }}
+          {{- /* No -f: an unauthenticated request to SeaweedFS's S3 gateway can
+          legitimately 403 rather than 200 -- any well-formed HTTP status proves
+          the gateway is up, which is all this check is for. The e2e check
+          (make e2e) is what actually exercises signed reads/writes through it. */}}
+          check "objectstore reachable" sh -c 'curl -s -o /dev/null -w "%{http_code}" http://{{ include "fibrik.component" (list . "objectstore") }}:8333/ | grep -qE "^[0-9]{3}$"'
+          {{- end }}
           {{- if .Values.caddy.enabled }}
           {{- $caddy := include "fibrik.component" (list . "caddy") }}
           {{- $host := default "" .Values.caddy.domain }}

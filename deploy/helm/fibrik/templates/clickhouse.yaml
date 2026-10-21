@@ -62,6 +62,11 @@ spec:
         {{- include "fibrik.labels" (list . "clickhouse") | nindent 8 }}
       annotations:
         checksum/config: {{ .Values.clickhouse | toJson | sha256sum }}
+        # Bump this literal whenever clickhouse-schema.yaml's SQL changes, so
+        # the pod restarts and re-runs /docker-entrypoint-initdb.d -- the
+        # schema ConfigMap's content isn't derived from .Values, so the
+        # checksum above doesn't change when only the SQL does.
+        checksum/schema: "1"
     spec:
       containers:
         - name: clickhouse
@@ -101,10 +106,16 @@ spec:
               mountPath: /etc/clickhouse-server/config.d/fibrik.xml
               subPath: fibrik.xml
               readOnly: true
+            - name: schema
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
       volumes:
         - name: config
           configMap:
             name: {{ $name }}-config
+        - name: schema
+          configMap:
+            name: {{ include "fibrik.component" (list . "clickhouse-schema") }}
   volumeClaimTemplates:
     {{- include "fibrik.pvc" (list . .Values.clickhouse.persistence.size) | nindent 4 }}
 {{- end }}

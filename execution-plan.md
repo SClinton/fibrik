@@ -139,8 +139,15 @@ and `make up` starts an empty Compose stack.
 
 ## 2. Phase 1: Data-plane walking skeleton (weeks 1–3)
 
+> **Superseded by ADR-25** (`architecture.md` §11) for the `ci`/`free`
+> profiles: the walking skeleton below deploys through the Helm chart, not
+> the docker-compose stack in §2.1, and has no Kafka or Trino (ADR-22).
+> §2.1/§2.2 are kept as the original design record; see the chart under
+> `deploy/helm/fibrik` for what actually ships.
+
 **Goal:** one syslog line sent with `logger` shows up as an OCSF row in ClickHouse
-and in an Iceberg table that Trino can query.
+and in an Iceberg table queryable through ClickHouse's Iceberg table functions
+(originally Trino -- see the note above).
 
 ### 2.1 Compose stack (starting point)
 

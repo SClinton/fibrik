@@ -1,0 +1,77 @@
+{{- if .Values.objectstore.enabled }}
+{{- $name := include "fibrik.component" (list . "objectstore") }}
+# S3-compatible object store for the lake's bronze (raw) and gold (Iceberg)
+# tiers (initial-stack.md §1/§3: "S3 API, served by the host cloud's
+# S3-compatible endpoint"). SeaweedFS stands in for that endpoint on kind/k3d
+# dev clusters and the free/ci profiles, as execution-plan.md's own walking-
+# skeleton template already chose it (§2.1) -- see ADR-25. A real cloud S3
+# bucket replaces this component on the `standard` profile by setting
+# objectstore.enabled: false and pointing lakekeeper/vector at it instead
+# (not yet wired -- see OPEN_ITEMS-equivalent follow-up).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "objectstore") | nindent 4 }}
+spec:
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "objectstore") | nindent 4 }}
+  ports:
+    - name: s3
+      port: 8333
+      targetPort: s3
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "objectstore") | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "objectstore") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "objectstore") | nindent 8 }}
+    spec:
+      containers:
+        - name: seaweedfs
+          image: {{ include "fibrik.image" .Values.objectstore.image }}
+          env:
+            {{- include "fibrik.secretEnv" (list . "OBJECTSTORE_ACCESS_KEY" "objectstore-access-key") | nindent 12 }}
+            {{- include "fibrik.secretEnv" (list . "OBJECTSTORE_SECRET_KEY" "objectstore-secret-key") | nindent 12 }}
+          command: ["sh", "-c"]
+          args:
+            # The S3 identity config embeds the secret key, so it's written
+            # from the credentials Secret's env vars at container start
+            # (postgres.yaml's initdb script uses the same pattern) rather
+            # than baked into a ConfigMap. No heredoc here -- its terminator
+            # would inherit this YAML block's indentation and never match.
+            - |
+              set -eu
+              printf '%s' "{\"identities\":[{\"name\":\"fibrik\",\"credentials\":[{\"accessKey\":\"$OBJECTSTORE_ACCESS_KEY\",\"secretKey\":\"$OBJECTSTORE_SECRET_KEY\"}],\"actions\":[\"Admin\",\"Read\",\"Write\"]}]}" > /tmp/s3-config.json
+              exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3-config.json \
+                -master.volumeSizeLimitMB=1024 -volume.max=0
+          ports:
+            - name: s3
+              containerPort: 8333
+          readinessProbe:
+            tcpSocket: { port: s3 }
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: s3 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.objectstore.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    {{- include "fibrik.pvc" (list . .Values.objectstore.persistence.size) | nindent 4 }}
+{{- end }}

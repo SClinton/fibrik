@@ -1,0 +1,34 @@
+[project]
+name = "fibrik"
+version = "0.1.0"
+description = "Fibrik: the Open Security Data Fabric for Agentic AI -- Python control plane (initial-stack.md §4)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+  "typer>=0.15",
+  # s3fs: PyIceberg needs this for actual S3 reads/writes (table.append(),
+  # not just REST catalog metadata calls) -- found the hard way via a real
+  # CI run's "ModuleNotFoundError: No module named 's3fs'" once the catalog
+  # handshake itself started working.
+  "pyiceberg[pyarrow,s3fs]>=0.9",
+  "clickhouse-connect>=0.8",
+]
+
+[project.scripts]
+fibrik = "fibrik.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fibrik"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["fibrik"]

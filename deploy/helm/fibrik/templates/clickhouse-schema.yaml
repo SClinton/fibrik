@@ -1,0 +1,191 @@
+{{- if .Values.clickhouse.enabled }}
+{{- $db := .Values.clickhouse.database }}
+# OCSF hot-store schema (execution-plan.md §2.3 task 2) and the cost ledger
+# (architecture.md §5.7's documented schema, ADR-11: "cost metering is built
+# into the data plane from Phase 1"). Mounted at
+# /docker-entrypoint-initdb.d/, which the official clickhouse-server image
+# runs once against an empty data directory, same mechanism as
+# postgres.yaml's initdb ConfigMap.
+#
+# Every table stores the full event as a `raw_data` JSON column plus a
+# handful of hot, typed columns promoted out of it (architecture.md §5.6:
+# MergeTree ordered by (tenant_id, class_uid, time)) -- cheap to add more
+# typed columns later without re-ingesting, since raw_data keeps the rest.
+#
+# ocsf_process_activity, ocsf_api_activity, source_stats, signals and alerts
+# are schema-only in this walking skeleton: nothing in this chart writes to
+# them yet (no process/API OCSF mapping, no health monitor, no detection
+# runner -- all later phases per execution-plan.md). Only ocsf_authentication,
+# dlq and cost_ledger are actually populated, by vector.yaml's sshd mapping.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fibrik.component" (list . "clickhouse-schema") }}
+  labels:
+    {{- include "fibrik.labels" (list . "clickhouse") | nindent 4 }}
+data:
+  10-fibrik-schema.sql: |
+    CREATE TABLE IF NOT EXISTS {{ $db }}.ocsf_authentication
+    (
+      time            DateTime64(3),
+      tenant_id       LowCardinality(String),
+      source_id       LowCardinality(String),
+      class_uid       UInt32,
+      category_uid    UInt32,
+      activity_id     UInt16,
+      status_id       UInt8,
+      user_name       String,
+      src_endpoint_ip String,
+      src_endpoint_port UInt32,
+      auth_protocol   LowCardinality(String),
+      product_name    LowCardinality(String),
+      vendor_name     LowCardinality(String),
+      raw_data        String
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMMDD(time)
+    ORDER BY (tenant_id, class_uid, time)
+    TTL toDateTime(time) + INTERVAL 30 DAY;
+
+    -- Schema-only: no Process Activity (class_uid 1007) mapping ships in
+    -- this walking skeleton yet.
+    CREATE TABLE IF NOT EXISTS {{ $db }}.ocsf_process_activity
+    (
+      time            DateTime64(3),
+      tenant_id       LowCardinality(String),
+      source_id       LowCardinality(String),
+      class_uid       UInt32,
+      category_uid    UInt32,
+      activity_id     UInt16,
+      status_id       UInt8,
+      actor_user_name String,
+      process_name    String,
+      process_cmdline String,
+      product_name    LowCardinality(String),
+      vendor_name     LowCardinality(String),
+      raw_data        String
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMMDD(time)
+    ORDER BY (tenant_id, class_uid, time)
+    TTL toDateTime(time) + INTERVAL 30 DAY;
+
+    -- Schema-only: no API Activity (class_uid 6003) mapping ships in this
+    -- walking skeleton yet.
+    CREATE TABLE IF NOT EXISTS {{ $db }}.ocsf_api_activity
+    (
+      time            DateTime64(3),
+      tenant_id       LowCardinality(String),
+      source_id       LowCardinality(String),
+      class_uid       UInt32,
+      category_uid    UInt32,
+      activity_id     UInt16,
+      status_id       UInt8,
+      api_operation   LowCardinality(String),
+      src_endpoint_ip String,
+      dst_endpoint_ip String,
+      product_name    LowCardinality(String),
+      vendor_name     LowCardinality(String),
+      raw_data        String
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMMDD(time)
+    ORDER BY (tenant_id, class_uid, time)
+    TTL toDateTime(time) + INTERVAL 30 DAY;
+
+    -- Dropped/malformed events (Vector's `reroute_dropped`), per source and
+    -- reason, so a bad parser is visible instead of silently losing events.
+    CREATE TABLE IF NOT EXISTS {{ $db }}.dlq
+    (
+      time      DateTime64(3),
+      tenant_id LowCardinality(String),
+      source_id LowCardinality(String),
+      reason    String,
+      raw_data  String
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMMDD(time)
+    ORDER BY (tenant_id, source_id, time)
+    TTL toDateTime(time) + INTERVAL 30 DAY;
+
+    -- Schema-only: no health/silence/drift monitor ships in this walking
+    -- skeleton yet (execution-plan.md Phase 3).
+    CREATE TABLE IF NOT EXISTS {{ $db }}.source_stats
+    (
+      ts        DateTime,
+      tenant_id LowCardinality(String),
+      source_id LowCardinality(String),
+      events    UInt64,
+      bytes     UInt64
+    )
+    ENGINE = SummingMergeTree
+    PARTITION BY toYYYYMMDD(ts)
+    ORDER BY (tenant_id, source_id, ts);
+
+    -- Schema-only: no detection runner ships in this walking skeleton yet
+    -- (execution-plan.md Phase 4).
+    CREATE TABLE IF NOT EXISTS {{ $db }}.signals
+    (
+      id        String,
+      ts        DateTime64(3),
+      tenant_id LowCardinality(String),
+      rule_id   String,
+      class_uid UInt32,
+      details   String
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMMDD(ts)
+    ORDER BY (tenant_id, rule_id, ts);
+
+    CREATE TABLE IF NOT EXISTS {{ $db }}.alerts
+    (
+      id        String,
+      ts        DateTime64(3),
+      tenant_id LowCardinality(String),
+      rule_id   String,
+      severity  LowCardinality(String),
+      title     String,
+      details   String
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMMDD(ts)
+    ORDER BY (tenant_id, ts);
+
+    -- Exact schema from architecture.md §5.7 ("Cost ledger schema"). route_id,
+    -- pipeline_version, destination_id and tier default to "default"/"v0" in
+    -- this walking skeleton, since route policies and pipeline versioning
+    -- (Phase 2/3) don't exist yet -- the columns are real so later phases
+    -- don't need a migration, only to start populating them.
+    CREATE TABLE IF NOT EXISTS {{ $db }}.cost_ledger
+    (
+      ts               DateTime,
+      tenant_id        LowCardinality(String),
+      source_id        LowCardinality(String),
+      route_id         LowCardinality(String) DEFAULT 'default',
+      pipeline_version LowCardinality(String) DEFAULT 'v0',
+      destination_id   LowCardinality(String),
+      tier             LowCardinality(String) DEFAULT 'default',
+      events_in        UInt64,
+      bytes_in         UInt64,
+      events_out       UInt64,
+      bytes_out        UInt64,
+      baseline_bytes   UInt64 DEFAULT 0
+    )
+    ENGINE = SummingMergeTree
+    PARTITION BY toYYYYMMDD(ts)
+    ORDER BY (tenant_id, source_id, destination_id, ts);
+
+    -- High-watermark per ClickHouse table the lake writer (fibrik/lake)
+    -- polls, so a restart resumes instead of re-reading from the start.
+    -- ReplacingMergeTree keyed on table_name: the writer always inserts the
+    -- new watermark rather than updating in place, and a `FINAL` read (or
+    -- the usual eventual background merge) resolves to the latest.
+    CREATE TABLE IF NOT EXISTS {{ $db }}._lake_writer_state
+    (
+      table_name String,
+      last_time  DateTime64(3),
+      updated_at DateTime64(3) DEFAULT now64(3)
+    )
+    ENGINE = ReplacingMergeTree(updated_at)
+    ORDER BY table_name;
+{{- end }}

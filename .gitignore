@@ -1,2 +1,8 @@
 # Tools installed by `make tools`
 /.bin/
+
+# Python (fibrik/)
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/

@@ -1,0 +1,327 @@
+{{- if .Values.vector.enabled }}
+{{- $name := include "fibrik.component" (list . "vector") }}
+{{- $clickhouse := include "fibrik.component" (list . "clickhouse") }}
+{{- $objectstore := include "fibrik.component" (list . "objectstore") }}
+# The data-plane walking skeleton (execution-plan.md §2, ADR-25): ingests
+# syslog/HTTP, maps sshd auth lines to OCSF, and writes the hot store
+# (ClickHouse) plus the lake's bronze archive (S3/SeaweedFS). One Vector
+# instance does both collector and worker roles -- no Kafka between them, per
+# ADR-22's lean profile, so buffering is Vector's own in-memory sink buffers
+# rather than a topic. Persistent on-disk buffers (the decided mechanism for
+# the free/standard profiles, initial-stack.md §3) aren't wired up yet; this
+# walking skeleton accepts the smaller blast radius of an in-memory buffer on
+# pod restart as a scope cut, not an oversight.
+#
+# This Vector config is authored against Vector's documented VRL/config
+# reference but has not been run against a real Vector binary (no
+# Docker/vector binary in the build sandbox) -- first real validation is the
+# `make ci-kind` job.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-config
+  labels:
+    {{- include "fibrik.labels" (list . "vector") | nindent 4 }}
+data:
+  vector.yaml: |
+    # api.address, not a vector CLI flag -- an earlier version of this file
+    # passed --api-addr on the container's args, which doesn't exist as a
+    # top-level vector flag ("error: unexpected argument '--api-addr'
+    # found"), confirmed the hard way via a real CI run (see the PR this
+    # landed in). The readiness/liveness probes below hit this port.
+    api:
+      enabled: true
+      address: "0.0.0.0:8686"
+
+    sources:
+      syslog_udp:
+        type: syslog
+        address: "0.0.0.0:5514"
+        mode: udp
+      syslog_tcp:
+        type: syslog
+        address: "0.0.0.0:5514"
+        mode: tcp
+      http_in:
+        type: http_server
+        address: "0.0.0.0:8088"
+        decoding:
+          codec: json
+      vector_metrics:
+        type: internal_metrics
+
+    transforms:
+      # Tags every event with the Fibrik envelope before anything else sees
+      # it -- same fields/shape as execution-plan.md §2.2's collector.yaml,
+      # adapted (no Kafka output; everything stays in one Vector instance).
+      envelope:
+        type: remap
+        inputs: [syslog_udp, syslog_tcp, http_in]
+        source: |
+          .fibrik.tenant_id = "default"
+          .fibrik.source_id = if exists(.appname) { "linux-" + to_string!(.appname) } else { "http" }
+          .fibrik.received_at = now()
+
+      # sshd auth lines -> OCSF Authentication (class_uid 3002). Same regex
+      # as execution-plan.md §2.2's worker/sshd.yaml; field names flattened
+      # to match clickhouse-schema.yaml's ocsf_authentication columns
+      # (Vector's clickhouse sink inserts by matching top-level JSON keys to
+      # column names, so no nested objects here). Anything that isn't an
+      # sshd line (every http_in event included) correctly falls through to
+      # `.dropped` -- this walking skeleton only maps one source type.
+      sshd_ocsf:
+        type: remap
+        inputs: [envelope]
+        drop_on_error: true
+        reroute_dropped: true
+        source: |
+          raw = .message
+          m = parse_regex!(raw, r'^(?P<result>Accepted|Failed) (?P<method>\S+) for (invalid user )?(?P<user>\S+) from (?P<ip>\S+) port (?P<port>\d+)')
+          status = if m.result == "Accepted" { 1 } else { 2 }
+          . = {
+            "time": .fibrik.received_at,
+            "tenant_id": .fibrik.tenant_id,
+            "source_id": .fibrik.source_id,
+            "class_uid": 3002,
+            "category_uid": 3,
+            "activity_id": 1,
+            "status_id": status,
+            "user_name": m.user,
+            "src_endpoint_ip": m.ip,
+            "src_endpoint_port": to_int!(m.port),
+            "auth_protocol": m.method,
+            "product_name": "sshd",
+            "vendor_name": "OpenBSD",
+            "raw_data": raw
+          }
+
+      # Shapes whatever sshd_ocsf couldn't parse into dlq's columns. Every
+      # field read defensively (an explicit null check, never the `!`
+      # panic-on-error form) so this transform itself can't throw and
+      # silently lose the event a second time. VRL's `??` only catches
+      # fallible (error-returning) expressions, not a plain possibly-null
+      # path read, which is why this uses `if x == null` instead.
+      dlq_rows:
+        type: remap
+        inputs: [sshd_ocsf.dropped]
+        source: |
+          time = .fibrik.received_at
+          if time == null { time = now() }
+          tenant_id = .fibrik.tenant_id
+          if tenant_id == null { tenant_id = "default" }
+          source_id = .fibrik.source_id
+          if source_id == null { source_id = "unknown" }
+          raw_data = .message
+          if raw_data == null { raw_data = "unknown" }
+          . = {
+            "time": time,
+            "tenant_id": tenant_id,
+            "source_id": source_id,
+            "reason": "sshd_ocsf_parse_error",
+            "raw_data": raw_data
+          }
+
+      # Cost metering from day one (architecture.md §5.7, ADR-11). Uses
+      # Vector's own internal_metrics rather than a hand-written per-event
+      # metric, so this is per Vector COMPONENT (component_id), not per
+      # Fibrik logical source_id -- bytes_in is attributed to the ingesting
+      # component (syslog_udp/syslog_tcp/http_in), bytes_out to the emitting
+      # sink (clickhouse_hot/raw_archive/...), matching execution-plan.md
+      # §2.3 task 6's own phrasing ("per-source bytes_in... per-destination
+      # bytes_out") at component granularity. True per-logical-source
+      # attribution needs a content-aware metric and is a follow-up.
+      cost_metrics_filter:
+        type: filter
+        inputs: [vector_metrics]
+        condition: '.name == "component_received_bytes_total" || .name == "component_sent_bytes_total"'
+
+      cost_metrics_agg:
+        type: aggregate
+        inputs: [cost_metrics_filter]
+        interval_ms: 300000
+
+      cost_ledger_rows:
+        type: remap
+        inputs: [cost_metrics_agg]
+        drop_on_error: true
+        source: |
+          is_in = .name == "component_received_bytes_total"
+          component_id = .tags.component_id
+          if component_id == null { component_id = "unknown" }
+          value = to_int!(.counter.value)
+          source_id = ""
+          destination_id = ""
+          bytes_in = 0
+          bytes_out = 0
+          if is_in {
+            source_id = component_id
+            bytes_in = value
+          } else {
+            destination_id = component_id
+            bytes_out = value
+          }
+          . = {
+            "ts": now(),
+            "tenant_id": "default",
+            "source_id": source_id,
+            "destination_id": destination_id,
+            "events_in": 0,
+            "bytes_in": bytes_in,
+            "events_out": 0,
+            "bytes_out": bytes_out
+          }
+
+    sinks:
+      # date_time_best_effort: ClickHouse's default date_time_input_format
+      # only parses "YYYY-MM-DD HH:MM:SS", not the RFC3339/ISO8601 strings
+      # ("...T...Z") Vector's JSON encoder writes VRL timestamp values as --
+      # without this, every insert 400s ("Not retriable; dropping the
+      # request"), confirmed the hard way via a real CI run where Vector
+      # logged exactly that and silently dropped every event. On all three
+      # sinks since all three tables have a timestamp column.
+      clickhouse_hot:
+        type: clickhouse
+        inputs: [sshd_ocsf]
+        endpoint: "http://{{ $clickhouse }}:8123"
+        database: {{ .Values.clickhouse.database | quote }}
+        table: ocsf_authentication
+        skip_unknown_fields: true
+        date_time_best_effort: true
+        auth:
+          strategy: basic
+          user: {{ .Values.clickhouse.user | quote }}
+          password: "${CLICKHOUSE_PASSWORD}"
+
+      clickhouse_dlq:
+        type: clickhouse
+        inputs: [dlq_rows]
+        endpoint: "http://{{ $clickhouse }}:8123"
+        database: {{ .Values.clickhouse.database | quote }}
+        table: dlq
+        skip_unknown_fields: true
+        date_time_best_effort: true
+        auth:
+          strategy: basic
+          user: {{ .Values.clickhouse.user | quote }}
+          password: "${CLICKHOUSE_PASSWORD}"
+
+      clickhouse_cost:
+        type: clickhouse
+        inputs: [cost_ledger_rows]
+        endpoint: "http://{{ $clickhouse }}:8123"
+        database: {{ .Values.clickhouse.database | quote }}
+        table: cost_ledger
+        skip_unknown_fields: true
+        date_time_best_effort: true
+        auth:
+          strategy: basic
+          user: {{ .Values.clickhouse.user | quote }}
+          password: "${CLICKHOUSE_PASSWORD}"
+
+      # Raw bronze archive (architecture.md §5.6: s3://fibrik-lake/bronze/).
+      # Every envelope-tagged event, not just the ones sshd_ocsf could map,
+      # so nothing is lost even before a source has a pack/mapping.
+      raw_archive:
+        type: aws_s3
+        inputs: [envelope]
+        bucket: {{ .Values.objectstore.lakeBucket | quote }}
+        endpoint: "http://{{ $objectstore }}:8333"
+        region: us-east-1
+        force_path_style: true
+        key_prefix: "bronze/{{ "{{" }} fibrik.tenant_id {{ "}}" }}/{{ "{{" }} fibrik.source_id {{ "}}" }}/%Y/%m/%d/%H/"
+        compression: gzip
+        encoding:
+          codec: json
+        framing:
+          method: newline_delimited
+        auth:
+          access_key_id: "${AWS_ACCESS_KEY_ID}"
+          secret_access_key: "${AWS_SECRET_ACCESS_KEY}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "vector") | nindent 4 }}
+spec:
+  selector:
+    {{- include "fibrik.selectorLabels" (list . "vector") | nindent 4 }}
+  ports:
+    - name: syslog-udp
+      port: 5514
+      protocol: UDP
+      targetPort: syslog-udp
+    - name: syslog-tcp
+      port: 5514
+      protocol: TCP
+      targetPort: syslog-tcp
+    - name: http
+      port: 8088
+      targetPort: http
+    - name: api
+      port: 8686
+      targetPort: api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "fibrik.labels" (list . "vector") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fibrik.selectorLabels" (list . "vector") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fibrik.labels" (list . "vector") | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values.vector | toJson | sha256sum }}
+        checksum/schema: "2"
+    spec:
+      containers:
+        - name: vector
+          image: {{ include "fibrik.image" .Values.vector.image }}
+          args: ["--config", "/etc/vector/vector.yaml"]
+          env:
+            {{- include "fibrik.secretEnv" (list . "CLICKHOUSE_PASSWORD" "clickhouse-password") | nindent 12 }}
+            {{- include "fibrik.secretEnv" (list . "AWS_ACCESS_KEY_ID" "objectstore-access-key") | nindent 12 }}
+            {{- include "fibrik.secretEnv" (list . "AWS_SECRET_ACCESS_KEY" "objectstore-secret-key") | nindent 12 }}
+            - name: VECTOR_WATCH_CONFIG
+              value: "true"
+          ports:
+            - name: syslog-udp
+              containerPort: 5514
+              protocol: UDP
+            - name: syslog-tcp
+              containerPort: 5514
+              protocol: TCP
+            - name: http
+              containerPort: 8088
+            - name: api
+              containerPort: 8686
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: api
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.vector.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vector
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}-config
+{{- end }}
