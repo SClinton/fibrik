@@ -172,6 +172,13 @@ data:
           }
 
     sinks:
+      # date_time_best_effort: ClickHouse's default date_time_input_format
+      # only parses "YYYY-MM-DD HH:MM:SS", not the RFC3339/ISO8601 strings
+      # ("...T...Z") Vector's JSON encoder writes VRL timestamp values as --
+      # without this, every insert 400s ("Not retriable; dropping the
+      # request"), confirmed the hard way via a real CI run where Vector
+      # logged exactly that and silently dropped every event. On all three
+      # sinks since all three tables have a timestamp column.
       clickhouse_hot:
         type: clickhouse
         inputs: [sshd_ocsf]
@@ -179,6 +186,7 @@ data:
         database: {{ .Values.clickhouse.database | quote }}
         table: ocsf_authentication
         skip_unknown_fields: true
+        date_time_best_effort: true
         auth:
           strategy: basic
           user: {{ .Values.clickhouse.user | quote }}
@@ -191,6 +199,7 @@ data:
         database: {{ .Values.clickhouse.database | quote }}
         table: dlq
         skip_unknown_fields: true
+        date_time_best_effort: true
         auth:
           strategy: basic
           user: {{ .Values.clickhouse.user | quote }}
@@ -203,6 +212,7 @@ data:
         database: {{ .Values.clickhouse.database | quote }}
         table: cost_ledger
         skip_unknown_fields: true
+        date_time_best_effort: true
         auth:
           strategy: basic
           user: {{ .Values.clickhouse.user | quote }}
