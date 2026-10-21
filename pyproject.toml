@@ -7,7 +7,11 @@ license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
   "typer>=0.15",
-  "pyiceberg[pyarrow]>=0.9",
+  # s3fs: PyIceberg needs this for actual S3 reads/writes (table.append(),
+  # not just REST catalog metadata calls) -- found the hard way via a real
+  # CI run's "ModuleNotFoundError: No module named 's3fs'" once the catalog
+  # handshake itself started working.
+  "pyiceberg[pyarrow,s3fs]>=0.9",
   "clickhouse-connect>=0.8",
 ]
 

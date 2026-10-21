@@ -72,20 +72,6 @@ def e2e(
         raise typer.Exit(code=1)
     typer.echo(f"OK: {table} reached {after} rows ({sent} new) in ClickHouse")
 
-    # Temporary diagnostic: a bare `requests.get()` against the exact same
-    # GetConfig URL, from inside this same pod/image, with no PyIceberg
-    # involved at all -- isolates whether something about this specific
-    # pod/image (not the request contents) is the real difference from the
-    # curl pod's already-proven-working request. Remove once explained.
-    import requests  # noqa: PLC0415
-    diag_url = f"{lakekeeper_uri.rstrip('/')}/v1/config"
-    diag_resp = requests.get(diag_url, params={"warehouse": lakekeeper_warehouse})
-    logger.warning(
-        "e2e diag: raw requests.get(%s?warehouse=%s) -> %d; sent headers=%s; response body=%s",
-        diag_url, lakekeeper_warehouse, diag_resp.status_code,
-        dict(diag_resp.request.headers), diag_resp.text[:500],
-    )
-
     cfg = LakeWriterConfig(
         clickhouse_host=clickhouse_host, clickhouse_port=clickhouse_port,
         clickhouse_user=clickhouse_user, clickhouse_password=clickhouse_password,
